@@ -18,13 +18,10 @@ static const size_t MAX_PENDING_WRITES = 16;
 
 void AeccComponent::setup() {
 #ifdef USE_ESP32
-  this->mutex_ = xSemaphoreCreateMutex();
   if (this->mutex_ == nullptr) {
     this->mark_failed();
     return;
   }
-  // The bus runs off the ESPHome loop so that an OTA, a WiFi reconnect or a slow
-  // component cannot stall a control loop whose job is preventing export.
   if (this->control_ != nullptr) {
     // The control law clamps by SOC, so it needs one even when no sensor asked for it.
     this->add_watch(reg::SOC, 10000);
@@ -45,13 +42,25 @@ void AeccComponent::setup() {
 
 void AeccComponent::lock_() {
 #ifdef USE_ESP32
-  xSemaphoreTake(this->mutex_, portMAX_DELAY);
+  if (this->mutex_ != nullptr)
+    xSemaphoreTake(this->mutex_, portMAX_DELAY);
 #endif
 }
 
 void AeccComponent::unlock_() {
 #ifdef USE_ESP32
-  xSemaphoreGive(this->mutex_);
+  if (this->mutex_ != nullptr)
+    xSemaphoreGive(this->mutex_);
+#endif
+}
+
+bool AeccComponent::commanding_() const {
+  return this->control_ != nullptr && this->control_->mode() != ControlMode::OFF;
+}
+
+void AeccComponent::feed_wdt_() {
+#ifdef USE_ESP32
+  esp_task_wdt_reset();
 #endif
 }
 
@@ -248,7 +257,7 @@ void AeccComponent::restore_step_() {
     } else if (key.compare(0, 2, "0x") == 0) {
       const uint16_t addr = (uint16_t) strtoul(key.c_str() + 2, nullptr, 16);
       const uint16_t want = (uint16_t) strtoul(value.c_str(), nullptr, 10);
-      if (addr < 0xA028 || addr >= 0xA0FA) {
+      if ((addr < 0xA028 || addr >= 0xA0FA) && addr != reg::ON_GRID_POWER_MIRROR) {
         this->lock_();
         this->restore_skipped_++;
         this->unlock_();
@@ -290,14 +299,15 @@ void AeccComponent::restore_step_() {
   auto ems = this->restore_ems_;
   this->unlock_();
   size_t ems_written = 0;
+  this->feed_wdt_();
   if (!ems.empty() && this->dl_.configured() && this->dl_.write(ems))
     ems_written = ems.size();
 
   char report[160];
   this->lock_();
   snprintf(report, sizeof(report),
-           "written %u, already correct %u, refused %u, outside the settings island (not "
-           "written) counted as skipped, ems %u\n",
+           "written %u, already correct or not a writable setting %u, refused %u, "
+           "ems %u\n",
            this->restore_written_, this->restore_skipped_, this->restore_failed_,
            (unsigned) ems_written);
   this->restore_report_ = report;
@@ -337,6 +347,8 @@ void AeccComponent::check_ports_() {
     return;
   }
 
+  this->feed_wdt_();
+
   // Only trust the inverter-shaped reply from the meter bus if it did not first identify
   // itself as a meter: the meter ignores addresses outside its own map rather than
   // raising an exception, so a stray read there can succeed by luck.
@@ -353,7 +365,15 @@ void AeccComponent::reconcile_() {
   // underneath a running controller, which is why this repeats rather than runs once.
   const std::vector<uint16_t> want = {3000, 3003, 3020, 3021, 3022, 3026, 3029, 3030};
   std::map<uint16_t, std::string> got;
-  if (!this->dl_.read(want, got)) {
+  const bool read_ok = this->dl_.read(want, got);
+  this->feed_wdt_();
+  if (!read_ok) {
+    this->ems_ready_ = false;
+    return;
+  }
+  // The read blocks for up to three seconds, which is long enough for someone to select
+  // Off so another controller can take the battery. Writing now would stomp it.
+  if (!this->commanding_()) {
     this->ems_ready_ = false;
     return;
   }
@@ -369,9 +389,8 @@ void AeccComponent::reconcile_() {
   const std::string slot = Datalogger::slot(this->resting_w_, max_soc, min_soc);
 
   std::map<uint16_t, std::string> fix;
-  // 3026 positive exports unconditionally, regardless of house load, so it is not enough
-  // to set it once: the app's AI mode writes it. It belongs in the reconcile set at a
-  // site where export is prohibited.
+  // 3026 positive exports unconditionally, regardless of house load, and the app's AI
+  // mode writes it, so setting it once is not enough.
   const std::pair<uint16_t, const char *> required[] = {
       {3000, "1"}, {3020, "6"}, {3021, "0"}, {3022, "0"},
       {3026, "0"}, {3029, "0"}, {3030, "1"}};
@@ -404,7 +423,9 @@ void AeccComponent::bus_task_() {
   esp_task_wdt_add(nullptr);
 #endif
   this->check_ports_();
-  if (this->dl_.configured()) {
+  this->feed_wdt_();
+  if (this->dl_.configured() && this->commanding_()) {
+    this->was_commanding_ = true;
     // Until this has run the schedule slot is whatever the app last left, which may be a
     // positive (discharging) value. Controlling before then means a crash in the first
     // minute could leave the unit exporting.
@@ -418,7 +439,7 @@ void AeccComponent::bus_task_() {
 #endif
     // The control loop is real time; polling and writes fill the gaps between ticks.
     if (this->control_ != nullptr && this->ports_ok_ &&
-        (!this->dl_.configured() || this->ems_ready_)) {
+        (!this->dl_.configured() || this->ems_ready_ || !this->commanding_())) {
       const uint32_t now = millis();
       if ((int32_t) (now - this->next_tick_) >= 0 &&
           this->ticks_since_housekeeping_ < TICKS_BEFORE_HOUSEKEEPING) {
@@ -439,11 +460,13 @@ void AeccComponent::bus_task_() {
     if (this->ota_active_) {
       if (!this->ota_parked_) {
         this->ota_parked_ = true;
-        // Park at zero and hold it there for the duration: a battery doing nothing cannot
-        // export, and the reboot then hands over to the resting slot.
-        this->inverter_.write_one(reg::SETPOINT, 0, 1);
+        // Park at zero and then go quiet: the resting slot takes over a few seconds
+        // later, and a battery on a charging slot cannot export. In Off there is nothing
+        // to park, and writing would break the promise that Off touches nothing.
+        if (this->commanding_())
+          this->inverter_.write_one(reg::SETPOINT, 0, 1);
         if (this->control_ != nullptr)
-          this->control_->set_enabled(false);
+          this->control_->set_parked(true);
         ESP_LOGW(TAG, "OTA in progress: setpoint parked, bus idle");
 #ifdef USE_ESP32
         // Flash writes can starve this task for longer than the watchdog allows, and a
@@ -460,7 +483,7 @@ void AeccComponent::bus_task_() {
       esp_task_wdt_add(nullptr);
 #endif
       if (this->control_ != nullptr)
-        this->control_->set_enabled(true);
+        this->control_->set_parked(false);
       ESP_LOGI(TAG, "OTA ended without rebooting; resuming");
     }
 #endif
@@ -477,7 +500,17 @@ void AeccComponent::bus_task_() {
       continue;
     }
 
-    if (this->dl_.configured() && millis() - this->reconciled_at_ > this->reconcile_ms_) {
+    const bool commanding = this->commanding_();
+    if (!commanding && this->was_commanding_) {
+      this->was_commanding_ = false;
+      // Whatever the EMS holds now is no longer this component's doing.
+      this->ems_ready_ = false;
+    }
+    if (this->dl_.configured() && commanding &&
+        (!this->was_commanding_ || millis() - this->reconciled_at_ > this->reconcile_ms_)) {
+      // Leaving Off reconciles at once rather than waiting out the interval, or the
+      // chosen mode does nothing until it elapses.
+      this->was_commanding_ = true;
       this->reconciled_at_ = millis();
       this->reconcile_();
       continue;

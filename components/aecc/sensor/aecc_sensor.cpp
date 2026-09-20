@@ -17,7 +17,7 @@ void AeccSensor::setup() {
   if (this->metric_ == Metric::REGISTER) {
     this->parent_->add_watch(this->address_, this->interval_);
   } else if (this->parent_->control() == nullptr) {
-    ESP_LOGE(TAG, "control diagnostic configured but zero_export is not enabled");
+    ESP_LOGE(TAG, "control diagnostic configured but control: is not");
     this->mark_failed();
   }
 }

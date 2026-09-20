@@ -32,8 +32,17 @@ jobs:
           wifi_password: "test_password"
           EOF
 
+      - name: Check tests/all-keys.yaml is current
+        run: python tests/generate.py --check
+
       - name: Validate configuration
         run: esphome config example.yaml
+
+      - name: Validate every generated entity
+        run: esphome config tests/all-keys.yaml
+
+      - name: Validate the manual-only shape
+        run: esphome config tests/manual-only.yaml
 
   build:
     runs-on: ubuntu-latest
@@ -60,3 +69,9 @@ jobs:
 
       - name: Compile firmware
         run: esphome compile example.yaml
+
+      - name: Compile every generated entity
+        run: esphome compile tests/all-keys.yaml
+
+      - name: Compile the manual-only shape
+        run: esphome compile tests/manual-only.yaml

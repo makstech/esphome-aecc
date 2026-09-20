@@ -15,7 +15,7 @@ void AeccBinarySensor::setup() {
     return;
   }
   if (this->parent_ == nullptr || this->parent_->control() == nullptr) {
-    ESP_LOGE(TAG, "needs zero_export to be configured");
+    ESP_LOGE(TAG, "needs control: to be configured");
     this->mark_failed();
   }
 }

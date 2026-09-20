@@ -9,13 +9,22 @@
 namespace esphome {
 namespace aecc {
 
-/// Holds the metered phase at a target by commanding the inverter's power setpoint.
+/// What the component is allowed to command. Off writes nothing at all, so the battery
+/// answers to the vendor app, the cloud or anything else on the bus.
+enum class ControlMode : uint8_t {
+  OFF = 0,
+  ZERO_EXPORT,
+  MANUAL,
+};
+
+/// Drives the inverter's power setpoint, either to hold the metered phase at a target or
+/// to a value someone set directly.
 ///
 /// The setpoint is signed: positive discharges to cover import, negative charges to
-/// absorb export. Correction is asymmetric because the directions are not equally
-/// forgiving - lowering the setpoint reduces export and is done in full and at once,
-/// raising it is the direction that can cause export and is ramped.
-class ZeroExport {
+/// absorb export. Zero-export correction is asymmetric because the directions are not
+/// equally forgiving - lowering the setpoint reduces export and is done in full and at
+/// once, raising it is the direction that can cause export and is ramped.
+class Controller {
  public:
   static const size_t MAX_SAMPLES = 32;
   /// One sample is its own median. Commanding on it means a single glitched
@@ -47,12 +56,18 @@ class ZeroExport {
   void set_grid_target(int32_t watts) { this->grid_target_ = watts; }
   void set_max_discharge(int32_t watts) { this->max_discharge_ = watts < 0 ? 0 : watts; }
   void set_max_charge(int32_t watts) { this->max_charge_ = watts < 0 ? 0 : watts; }
-  void set_enabled(bool enabled);
+  void set_mode(ControlMode mode) { this->mode_ = mode; }
+  /// Manual target in watts, positive discharging, the same sign as the setpoint
+  /// register and as EMHASS's p_sto_pos.
+  void set_manual_setpoint(int32_t watts) { this->manual_w_ = watts; }
+  // Held by the bus task across an OTA, so resuming cannot override the chosen mode.
+  void set_parked(bool parked) { this->parked_ = parked; }
 
   int32_t grid_target() const { return this->grid_target_; }
   int32_t max_discharge() const { return this->max_discharge_; }
   int32_t max_charge() const { return this->max_charge_; }
-  bool enabled() const { return this->enabled_; }
+  ControlMode mode() const { return this->mode_; }
+  int32_t manual_setpoint() const { return this->manual_w_; }
   uint8_t min_soc() const { return this->min_soc_; }
   uint8_t max_soc() const { return this->max_soc_; }
 
@@ -76,6 +91,15 @@ class ZeroExport {
 
  protected:
   int16_t step_(float grid_w, uint16_t soc, bool soc_valid);
+  /// The state of charge window, as the bounds the command may take.
+  void limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi) const;
+  /// Commands nothing and forgets everything the loop was carrying.
+  void idle_();
+  /// Starts the median filter again. Whatever it holds is from before the mode changed,
+  /// and the stamps are outside the window, so one tick would act on a single sample.
+  void reset_filter_();
+  /// Writes command_ and, occasionally, checks the inverter is acting on it.
+  void deliver_(ModbusRtu *inverter);
   /// ramp_up is the fraction of the error applied per tick at the rate it was validated
   /// at. Applying it per tick regardless of rate would make a faster loop ramp harder in
   /// the one direction that can export, so it is rescaled to hold the per-second
@@ -104,7 +128,13 @@ class ZeroExport {
   int32_t grid_target_{60};
   int32_t max_discharge_{600};
   int32_t max_charge_{2400};
-  bool enabled_{true};
+  // Off until someone selects a mode: a freshly flashed node should not start
+  // commanding a grid-connected battery on its own.
+  volatile ControlMode mode_{ControlMode::OFF};
+  volatile int32_t manual_w_{0};
+  bool parked_{false};
+  ControlMode last_mode_{ControlMode::OFF};
+  bool clamped_{false};
 
   float samples_[MAX_SAMPLES]{};
   uint32_t stamps_[MAX_SAMPLES]{};

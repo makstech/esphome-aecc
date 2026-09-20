@@ -73,7 +73,9 @@ On the unit this was mapped from, three independent RS485 buses share the connec
 host port, and two BMS links. One of those is the live connection between the inverter and
 the pack.
 
-A straight eight-wire patch cable shorts them together. Always crimp two conductors.
+The bundled CT meter bridges each net across two pins, so a straight eight-wire patch
+cable between it and the inverter shorts the two buses together. Break out only the two
+conductors you need at your end.
 
 Passive listening on the pack's link yields full per-cell telemetry for free, richer than
 the JSON API exposes — but never transmit there while the inverter is polling.

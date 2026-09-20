@@ -34,7 +34,7 @@ constexpr uint16_t ON_GRID_POWER = 0xA03F;      // W - the app locks this one
 /// and EMS 3039, so raising one alone changes nothing.
 constexpr uint16_t ON_GRID_POWER_MIRROR = 0x9ACE;
 constexpr uint16_t HYBRID_PRIORITY_EN = 0xA041;
-constexpr uint16_t GRID_STANDARD = 0xA043;      // enum indexes the app's list, varies by build
+constexpr uint16_t GRID_STANDARD = 0xA043;      // enum indexes the app's list in display order
 constexpr uint16_t EXT_CT_GET_HOST_EN = 0xA047;
 constexpr uint16_t ISLAND_EN = 0xA069;
 constexpr uint16_t BAT_TYPE = 0xA08C;           // 6 = LiFePO4 16S
@@ -84,9 +84,6 @@ constexpr Island CONFIG_ISLANDS[] = {
     {0xA028, 0xA0FA},
 };
 
-inline bool is_signed(uint16_t addr) {
-  return addr == BATTERY_POWER || addr == GRID_POWER || addr == SETPOINT;
-}
 
 }  // namespace reg
 

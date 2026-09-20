@@ -1,21 +1,19 @@
 import esphome.codegen as cg
 from esphome.components import binary_sensor
 import esphome.config_validation as cv
-from esphome.const import (
-    DEVICE_CLASS_PROBLEM,
-    ENTITY_CATEGORY_DIAGNOSTIC,
-)
+from esphome.const import ENTITY_CATEGORY_DIAGNOSTIC
 
 import esphome.final_validate as fv
 
-from .. import CONF_AECC_ID, CONF_ZERO_EXPORT, AeccComponent, aecc_ns
+from .. import CONF_AECC_ID, CONF_CONTROL, AeccComponent, aecc_ns
 
 DEPENDENCIES = ["aecc"]
 
 AeccBinarySensor = aecc_ns.class_("AeccBinarySensor", binary_sensor.BinarySensor, cg.Component)
 Health = aecc_ns.enum("Health", is_class=True)
 
-# Inverted device class: these read true when healthy, and "problem" is shown when false.
+# No device class: these read true when healthy, which is the inverse of every
+# health-shaped class Home Assistant offers.
 HEALTH = {
     "control_effective": "CONTROL_EFFECTIVE",
     "meter_ok": "METER_OK",
@@ -42,9 +40,15 @@ def _final_validate(config):
     hub = fv.full_config.get().get("aecc")
     if not isinstance(hub, dict):
         return config
-    if CONF_ZERO_EXPORT not in hub and any(k in config for k in ("control_effective", "meter_ok")):
-        raise cv.Invalid("control_effective and meter_ok report on the control loop, but "
-                         "zero_export is not configured")
+    if "control_effective" in config and CONF_CONTROL not in hub:
+        raise cv.Invalid("control_effective reports on the control loop, but control: is "
+                         "not configured")
+    # The controller owns the meter, so reading it needs both.
+    if "meter_ok" in config and ("meter" not in hub or CONF_CONTROL not in hub):
+        raise cv.Invalid("meter_ok needs a meter and control:")
+    if "ems_ready" in config and CONF_CONTROL not in hub:
+        raise cv.Invalid("ems_ready needs control: — the scheduler is only asserted while "
+                         "a mode is running")
     if "ems_ready" in config and "datalogger" not in hub:
         raise cv.Invalid("ems_ready needs a datalogger")
     return config

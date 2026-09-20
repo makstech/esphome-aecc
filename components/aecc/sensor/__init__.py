@@ -15,7 +15,9 @@ from esphome.const import (
     UNIT_WATT,
 )
 
-from .. import CONF_AECC_ID, AeccComponent, aecc_ns
+import esphome.final_validate as fv
+
+from .. import CONF_AECC_ID, CONF_CONTROL, AeccComponent, aecc_ns
 
 DEPENDENCIES = ["aecc"]
 
@@ -138,6 +140,26 @@ CONFIG_SCHEMA = cv.All(
     }
     ),
 )
+
+
+def _final_validate(config):
+    hub = fv.full_config.get().get("aecc")
+    if not isinstance(hub, dict):
+        return config
+    # The controller owns the meter, so reading it needs both.
+    needs_meter = [k for k in ("meter_power", "meter_power_filtered", "meter_age") if k in config]
+    if needs_meter and ("meter" not in hub or CONF_CONTROL not in hub):
+        verb = "needs" if len(needs_meter) == 1 else "need"
+        raise cv.Invalid(f"{', '.join(needs_meter)} {verb} a meter and control:")
+    needs_control = [k for k in ("commanded_power", "loop_rate") if k in config]
+    if needs_control and CONF_CONTROL not in hub:
+        verb = "reports" if len(needs_control) == 1 else "report"
+        raise cv.Invalid(f"{', '.join(needs_control)} {verb} on the control loop, but "
+                         "control: is not configured")
+    return config
+
+
+FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def _new(conf, parent, address, is_signed, scale):

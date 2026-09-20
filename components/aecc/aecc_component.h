@@ -12,7 +12,7 @@
 #include "meter.h"
 #include "modbus_rtu.h"
 #include "registers.h"
-#include "zero_export.h"
+#include "controller.h"
 
 #include <algorithm>
 #include <map>
@@ -86,13 +86,14 @@ class AeccComponent : public Component
   std::string restore_report();
 
   /// Optional; without it the component is monitoring and configuration only.
-  void set_control(ZeroExport *control) { this->control_ = control; }
-  ZeroExport *control() const { return this->control_; }
+  void set_control(Controller *control) { this->control_ = control; }
+  Controller *control() const { return this->control_; }
 
   Datalogger *datalogger() { return &this->dl_; }
   void set_datalogger_host(const std::string &host) { this->dl_.set_host(host); }
   void set_datalogger_port(uint16_t port) { this->dl_.set_port(port); }
   void set_resting_power(int32_t watts) { this->resting_w_ = watts; }
+  int32_t resting_power() const { return this->resting_w_; }
   void set_reconcile_interval(uint32_t ms) { this->reconcile_ms_ = ms; }
   /// True once the EMS has been seen holding the state the control loop needs.
   bool ems_ready() const { return this->ems_ready_; }
@@ -111,13 +112,20 @@ class AeccComponent : public Component
 #ifdef USE_ESP32
   static void bus_task_trampoline_(void *arg) { static_cast<AeccComponent *>(arg)->bus_task_(); }
   TaskHandle_t task_{nullptr};
-  SemaphoreHandle_t mutex_{nullptr};
+  // Constructed here, not in setup(): entities outrank the hub and call add_watch()
+  // first, and taking a null semaphore trips a FreeRTOS assert.
+  SemaphoreHandle_t mutex_{xSemaphoreCreateMutex()};
 #endif
   void lock_();
   void unlock_();
+  /// False in Off, where the component writes nothing at all.
+  bool commanding_() const;
+  /// Only valid on the bus task, which is the subscriber.
+  void feed_wdt_();
 
   ModbusRtu inverter_;
-  ZeroExport *control_{nullptr};
+  Controller *control_{nullptr};
+  bool was_commanding_{false};
   uint32_t next_tick_{0};
   /// When every tick overruns its period, nothing else in the task ever runs -
   /// including the OTA park and the EMS reconcile, which matter most exactly then.

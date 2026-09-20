@@ -1,4 +1,4 @@
-#include "zero_export.h"
+#include "controller.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
@@ -9,15 +9,7 @@ namespace aecc {
 
 static const char *const TAG = "aecc.control";
 
-void ZeroExport::set_enabled(bool enabled) {
-  if (this->enabled_ == enabled)
-    return;
-  this->enabled_ = enabled;
-  if (!enabled)
-    this->command_ = 0;
-}
-
-float ZeroExport::filter_(float sample) {
+float Controller::filter_(float sample) {
   const uint32_t now = millis();
   this->samples_[this->sample_head_] = sample;
   this->stamps_[this->sample_head_] = now;
@@ -37,19 +29,24 @@ float ZeroExport::filter_(float sample) {
   return within[n / 2];
 }
 
-int16_t ZeroExport::step_(float grid_w, uint16_t soc, bool soc_valid) {
+void Controller::limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi) const {
+  *lo = -this->max_charge_;
+  *hi = this->max_discharge_;
+  if (!soc_valid)
+    return;
+  if (soc <= this->min_soc_)
+    *hi = 0;  // empty: may still charge, must not discharge
+  if (soc >= this->max_soc_)
+    *lo = 0;  // full: may still discharge, must not charge
+}
+
+int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
   const float error = grid_w - (float) this->grid_target_;
   const float delta = error < 0 ? error : error * this->ramp_per_tick_;
   float target = (float) this->command_ + delta;
 
-  int32_t lo = -this->max_charge_;
-  int32_t hi = this->max_discharge_;
-  if (soc_valid) {
-    if (soc <= this->min_soc_)
-      hi = 0;  // empty: may still charge, must not discharge
-    if (soc >= this->max_soc_)
-      lo = 0;  // full: may still discharge, must not charge
-  }
+  int32_t lo, hi;
+  this->limits_(soc, soc_valid, &lo, &hi);
 
   if (target < (float) lo)
     target = (float) lo;
@@ -58,12 +55,38 @@ int16_t ZeroExport::step_(float grid_w, uint16_t soc, bool soc_valid) {
   return (int16_t) target;
 }
 
-void ZeroExport::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
+void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
   this->loops_++;
 
-  if (!this->enabled_) {
-    this->command_ = 0;
-    inverter->write_one(reg::SETPOINT, 0, 1);
+  // Loaded once: the main loop can change it between two reads, and a mode that reads
+  // OFF then MANUAL would fall through to the zero-export branch.
+  const ControlMode mode = this->parked_ ? ControlMode::OFF : this->mode_;
+  if (mode != this->last_mode_) {
+    this->last_mode_ = mode;
+    this->reset_filter_();
+  }
+
+  if (mode == ControlMode::OFF) {
+    this->idle_();
+    return;
+  }
+
+  if (mode == ControlMode::MANUAL) {
+    // The meter is not polled here, so its health is unknown rather than whatever it was.
+    this->meter_ok_ = false;
+    const int32_t asked = this->manual_w_;
+    int32_t lo, hi;
+    this->limits_(soc, soc_valid, &lo, &hi);
+    int32_t target = asked;
+    if (target < lo)
+      target = lo;
+    if (target > hi)
+      target = hi;
+    if (target != asked && !this->clamped_)
+      ESP_LOGW(TAG, "manual setpoint %d W held at %d W by the limits", (int) asked, (int) target);
+    this->clamped_ = target != asked;
+    this->command_ = (int16_t) target;
+    this->deliver_(inverter);
     return;
   }
 
@@ -93,6 +116,31 @@ void ZeroExport::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
     this->command_ = 0;
   }
 
+  this->deliver_(inverter);
+}
+
+void Controller::reset_filter_() {
+  // filter_() scans samples_[0, sample_count_), so the head has to go back too.
+  this->sample_count_ = 0;
+  this->sample_head_ = 0;
+  // The staleness clock would otherwise count the whole gap.
+  this->frozen_since_ = millis();
+  this->frozen_ = false;
+}
+
+void Controller::idle_() {
+  // Go quiet rather than command zero. The inverter falls back to its resting slot a few
+  // seconds after the writes stop; a continuous zero is a literal 0 W command and the
+  // slot never takes over.
+  this->command_ = 0;
+  this->reset_filter_();
+  // Nothing is being regulated, so neither diagnostic can claim health; leaving them at
+  // their last value reads as a working loop.
+  this->meter_ok_ = false;
+  this->effective_ = false;
+}
+
+void Controller::deliver_(ModbusRtu *inverter) {
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
   if (!wrote) {
     // Do not keep integrating against a command the inverter never received, or the

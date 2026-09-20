@@ -1,4 +1,6 @@
 #include "datalogger.h"
+
+#include <algorithm>
 #include "esphome/components/json/json_util.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -93,13 +95,19 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
 
   reply.clear();
   char buf[512];
-  while (millis() - started < TOTAL_MS) {
+  for (;;) {
+    const uint32_t elapsed = millis() - started;
+    if (elapsed >= TOTAL_MS)
+      break;
+    // Clamp to what is left of the budget: a fixed window entered near the deadline
+    // overruns it by its own length.
+    const uint32_t left = std::min(TOTAL_MS - elapsed, RECV_MS);
     fd_set rset;
     FD_ZERO(&rset);
     FD_SET(fd, &rset);
     struct timeval rtv {};
-    rtv.tv_sec = 0;
-    rtv.tv_usec = RECV_MS * 1000;
+    rtv.tv_sec = left / 1000;
+    rtv.tv_usec = (left % 1000) * 1000;
     if (::select(fd + 1, &rset, nullptr, nullptr, &rtv) <= 0)
       break;
     const ssize_t n = ::recv(fd, buf, sizeof(buf), 0);

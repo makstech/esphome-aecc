@@ -2,93 +2,202 @@
 
 Everything the component knows about, so you can reach a setting it does not model.
 
-Read any of these by adding it to the `sensor:` platform by address, and write one with
-the `aecc.write_register` action:
+**Key** is what you write under `aecc:` to get a control, with `_number`, `_switch` or
+`_select` after it. **Vendor name** is the identifier the vendor's own app uses, typos
+included. **`scale:`** is the literal value to type when reaching the register by address
+instead; a key already carries its own.
+
+Verified on a Humsienk `HSBPSS2K5W7K68WHEU`. Other units on this platform run the same
+firmware, but enum values and defaults differ between builds, so read a value back before
+trusting it.
+
+## Reaching a register the component does not model
+
+Read one:
 
 ```yaml
 sensor:
   - platform: aecc
     registers:
-      - name: Grid standard
-        address: 0xA043
+      - name: Parallel mode
+        address: 0xA02C
         interval: 60s
 ```
 
-Names are the vendor app's own identifiers. Verified on a Humsienk
-`HSBPSS2K5W7K68WHEU`; other units on this platform use the same firmware but enum values
-and defaults can differ between builds, so read a value back before trusting it.
+Read and write one:
+
+```yaml
+aecc:
+  registers:
+    - name: Parallel mode
+      address: 0xA02C
+      max_value: 7
+```
+
+Or write once, without an entity, with the `aecc.write_register` action.
+
+`scale` multiplies the register in both places, so a register holding tenths of a volt
+wants `scale: 0.1`. A bare `aecc: registers:` entry defaults to `0`–`65535` at scale 1, so
+set `max_value` to something the register actually accepts.
 
 ## Live telemetry
 
-| Address | Meaning | Notes |
-|---|---|---|
-| `0xFE06` | State of charge | % |
-| `0xFE07` | Battery power | signed; positive discharging |
-| `0xFE08` | Standby and conversion loss | W |
-| `0xFE0A` | Grid power at the inverter's own port | signed; positive exporting |
-| `0xFE10` | Backup (EPS) load | W |
-| `0xFE16` | Active power setpoint | signed; positive discharging |
+Read-only, and each has a `sensor:` key.
+
+| Meaning | Key | Address | Notes |
+|---|---|---|---|
+| State of charge | `soc` | `0xFE06` | % |
+| Battery power | `battery_power` | `0xFE07` | signed; positive discharging |
+| Standby and conversion loss | `losses` | `0xFE08` | W |
+| Grid power at the inverter's own port | `grid_power` | `0xFE0A` | signed; positive exporting |
+| Backup (EPS) load | `backup_load` | `0xFE10` | W |
+| Active power setpoint | `setpoint` | `0xFE16` | signed; positive discharging |
 
 ## Battery
 
-| Address | Meaning | Scale |
-|---|---|---|
-| `0xA08C` | Battery type | 6 = LiFePO4 16S |
-| `0xA08D` | Constant voltage | ×10 V |
-| `0xA08E` | Float voltage | ×10 V |
-| `0xA090` | Constant voltage charging time | minutes |
-| `0xA091` | Return-to-CV voltage | ×10 V |
-| `0xA092` | Battery → mains switchover voltage | ×10 V |
-| `0xA093` | Mains → battery switchover voltage | ×10 V |
-| `0xA094` | Undervoltage alarm | ×10 V |
-| `0xA095` | Low-voltage shutdown | ×10 V |
-| `0xA096` | End-of-discharge voltage | ×10 V |
-| `0xA097` | Voltage shutdown delay | seconds |
-| `0xA098` | End-of-discharge clear voltage | ×10 V |
-| `0xA03E` | Battery activation | 0/1 |
-| `0xA0AF` | Independent pack enable | 0/1 |
+| Meaning | Key | Address | Vendor name | `scale:` |
+|---|---|---|---|---|
+| [Battery type](#battery-type) | — | `0xA08C` | `batType` | `1` |
+| Constant voltage | `cv_voltage` | `0xA08D` | `cvVolt` | `0.1` |
+| Float voltage | `float_voltage` | `0xA08E` | `floatVolt` | `0.1` |
+| Constant voltage charging time, minutes | `cv_charge_time` | `0xA090` | `cvChgTimeSet` | `1` |
+| Return-to-CV voltage | `cv_return_voltage` | `0xA091` | `cvChgBackVolt` | `0.1` |
+| Battery → mains switchover voltage | `battery_to_mains_voltage` | `0xA092` | `inv2LineVolt` | `0.1` |
+| Mains → battery switchover voltage | `mains_to_battery_voltage` | `0xA093` | `lineBack2InvVolt` | `0.1` |
+| Undervoltage alarm | `undervoltage_alarm` | `0xA094` | `battLowVolt` | `0.1` |
+| Low-voltage shutdown | `low_voltage_shutdown` | `0xA095` | `battDelayOffVolt` | `0.1` |
+| End-of-discharge voltage | `eod_voltage` | `0xA096` | `battEodVolt` | `0.1` |
+| Voltage shutdown delay, seconds | `shutdown_delay` | `0xA097` | `battDelayOffTime` | `1` |
+| End-of-discharge clear voltage | `eod_clear_voltage` | `0xA098` | `battEodBackVolt` | `0.1` |
+| RS485 BMS link, off drops it | `bms_function` | `0xA099` | `bmsSet` | `1` |
+| [BMS protocol](#bms-protocol) | — | `0xA09A` | `bmsProtocal` | `1` |
+| Battery activation | `battery_activation` | `0xA03E` | `battActiveSet` | `1` |
+| Independent pack enable | `independent_pack` | `0xA0AF` | `battPackNotUnion` | `1` |
 
 ## Charging
 
-| Address | Meaning | Scale |
-|---|---|---|
-| `0xA02E` | Charge priority | enum |
-| `0xA02F` | Max charge current, stand-alone | ×10 A |
-| `0xA030` | Max charge current from PV | ×10 A |
-| `0xA031` | Max charge current from mains | ×10 A |
-| `0xA035` | Saturation current | ×10 A |
+| Meaning | Key | Address | Vendor name | `scale:` |
+|---|---|---|---|---|
+| [Charge priority](#charge-priority) | — | `0xA02E` | `chgPriority` | `1` |
+| Max charge current, stand-alone | `max_charge_current` | `0xA02F` | `maxChgCurrSet` | `0.1` |
+| Max charge current from PV | `pv_max_charge_current` | `0xA030` | `chgCurrByPvSet` | `0.1` |
+| Max charge current from mains — unconfirmed, see below | `mains_max_charge_current` | `0xA031` | `chgCurrByLineSet` | `0.1` |
+| Saturation current | `saturation_current` | `0xA035` | `chgFullCurrSet` | `0.1` |
 
 ## State of charge limits
 
-| Address | Meaning |
-|---|---|
-| `0xA09B` | Low alarm, % |
-| `0xA09C` | Shutdown point, % |
-| `0xA09D` | Full judgement, % |
-| `0xA09E` | Inverter → mains, % |
-| `0xA09F` | Mains → inverter, % |
+| Meaning | Key | Address | Vendor name | `scale:` |
+|---|---|---|---|---|
+| Low alarm, % | `soc_low_alarm` | `0xA09B` | — | `1` |
+| Shutdown point, % | `soc_shutdown` | `0xA09C` | — | `1` |
+| Full judgement, % | `soc_full` | `0xA09D` | — | `1` |
+| Inverter → mains, % | `soc_inverter_to_mains` | `0xA09E` | — | `1` |
+| Mains → inverter, % | `soc_mains_to_inverter` | `0xA09F` | — | `1` |
 
 ## Grid and output
 
-| Address | Meaning | Notes |
-|---|---|---|
-| `0x9C40` | Device on/off | 0/1 |
-| `0xA028` | Inverter operating mode | enum |
-| `0xA029` | Output voltage | ×10 V |
-| `0xA02A` | Output frequency | ×100 Hz |
-| `0xA02B` | Utility range | 0 = UPS, 1 = APL, 2 = GEN |
-| `0xA02C` | Parallel mode | 0 = stand-alone |
-| `0xA02D` | Energy saving mode | 0/1 |
-| `0xA033` | Buzzer mute | 0/1 |
-| `0xA034` | On-grid mode | 1 = PV to grid, 2 = anti-backflow via CT |
-| `0xA036` | Neutral–earth bond | 0/1, see below |
-| `0xA03F` | Grid-tie power cap | W — **the app locks this**, see below |
-| `0x9ACE` | Grid-tie power cap, second copy | W |
-| `0xA041` | Mixing priority | 0/1 |
-| `0xA043` | Grid standard | a preset; see below |
-| `0xA047` | Take grid reading from the EMS host | 0/1 |
-| `0xA069` | Anti-islanding | 0/1 |
-| `0xA04D`–`0xA0F9` | Grid code trip thresholds | voltage ×10, frequency ×100 |
+| Meaning | Key | Address | Vendor name | `scale:` |
+|---|---|---|---|---|
+| Device on/off — switches the inverter off | `device_power` | `0x9C40` | `onOffCtrl` | `1` |
+| [Inverter operating mode](#inverter-operating-mode) | — | `0xA028` | `outPriority` | `1` |
+| Output voltage | `output_voltage` | `0xA029` | `outVoltSet` | `0.1` |
+| Output frequency | `output_frequency` | `0xA02A` | `outFreqSet` | `0.01` |
+| [Utility range](#utility-range) | `utility_range` | `0xA02B` | `lineRangeSet` | `1` |
+| [Parallel mode](#parallel-mode) | — | `0xA02C` | `paraModeSet` | `1` |
+| Energy saving mode | `eco_mode` | `0xA02D` | `ecoEn` | `1` |
+| Buzzer mute | `buzzer_mute` | `0xA033` | `muteEn` | `1` |
+| [On-grid mode](#on-grid-mode) | `on_grid_mode` | `0xA034` | `onGirdSet` | `1` |
+| Neutral–earth bond — probably not, see below | — | `0xA036` | `nG_FuncEn` | `1` |
+| Grid-tie power cap, W — see below | `grid_export_limit` | `0xA03F` | `onGridActivePowerSet` | `1` |
+| Grid-tie power cap, second copy, W | — | `0x9ACE` | — | `1` |
+| Mixing priority | `mixing_priority` | `0xA041` | `hybirdPriorityEn` | `1` |
+| [Grid standard](#grid-standard) | `grid_standard` | `0xA043` | `gridStandardSet` | `1` |
+| Take the grid reading from the EMS host | `external_ct_host` | `0xA047` | `extCtGetHostEn` | `1` |
+| Anti-islanding — off stops it disconnecting from a dead grid | `anti_islanding` | `0xA069` | `islandEn` | `1` |
+| Grid code trip thresholds, apart from the registers above | — | `0xA04D`–`0xA0F9` | — | `0.1` V, `0.01` Hz |
+
+## Enum values
+
+Values are the index into the vendor app's own list, in the order the app displays them,
+confirmed against the app's own code.
+
+Where the whole list is known the component exposes a `_select` with real labels. Where it
+is not, there is no key at all: an index with no meaning attached is a worse control than
+none, so reaching those takes an explicit `registers:` entry.
+
+### Utility range
+
+`0xA02B` `lineRangeSet` — the AC input acceptance window, narrowest first.
+
+| | |
+|---|---|
+| `0` | UPS |
+| `1` | APL |
+| `2` | Generator |
+
+### On-grid mode
+
+`0xA034` `onGirdSet` — "PV to grid" means anti-backflow is *off*; `3` is the hook for
+feeding a grid reading from your own meter rather than the bundled CT.
+
+| | |
+|---|---|
+| `0` | Solar to load |
+| `1` | PV to grid |
+| `2` | Anti-backflow via CT |
+| `3` | Anti-backflow via smart device |
+
+### Parallel mode
+
+`0xA02C` `paraModeSet` — `3` and `5`–`7` build a three-phase bank from three units; `4` is
+split-phase.
+
+| | |
+|---|---|
+| `0` | Stand-alone |
+| `1` | Parallel |
+| `2` | Split-phase reference |
+| `3` | Split-phase at 120° |
+| `4` | Split-phase at 180° |
+| `5`–`7` | First, second, third of three phases |
+
+### Battery type
+
+`0xA08C` `batType` — only `6` = LiFePO4 16S was identified, so there is no key.
+
+### BMS protocol
+
+`0xA09A` `bmsProtocal` — only `1` = Pylontech was identified, so there is no key.
+
+### Charge priority
+
+`0xA02E` `chgPriority` — list not established, so there is no key.
+
+### Inverter operating mode
+
+`0xA028` `outPriority` — list not established and the register is not confirmed to be the
+operating mode at all, so there is no key.
+
+### Grid standard
+
+`0xA043` `gridStandardSet` — picks one of the firmware's built-in profiles, and a profile
+is nothing but a set of trip thresholds. Those thresholds live at `0xA04D`–`0xA0F9` and
+are individually readable and writable, so where your grid operator requires particular
+voltage or frequency limits, set them directly rather than trusting a profile to match.
+
+| | |
+|---|---|
+| `0` | GNL |
+| `1` | VDE4105 |
+| `2` | IEEE1547 |
+| `3` | CEI-021 |
+| `4` | VDE0126 |
+| `5` | EN50549 (General) |
+| `6` | EN50549-SE (Switzerland) |
+| `7` | EN50549-DK1 (Denmark) |
+| `8` | SI4777 (Israel) |
+| `9` | TOR-Z1 (Austria) |
+| `10` | EN50549-PL (Poland) |
 
 ## The bundled CT meter
 
@@ -101,26 +210,31 @@ big-endian word order, so each value spans two registers.
 | `12` | Active power, W — positive is importing |
 | `18` | Apparent power, VA |
 
-## The grid standard is a preset, not the limits
+## The grid-tie cap lives in three places
 
-`0xA043` selects one of the firmware's built-in grid profiles. The numbering follows a
-list that differs between firmware builds, so the value that means EN50549 on one unit may
-not on another. On the unit this was mapped from, `5` was EN50549.
+`0xA03F`, a second copy at `0x9ACE`, and the energy manager's `3039`. Output tops out at
+the lowest of them, and the vendor app displays the mirror rather than `0xA03F`.
 
-You do not need to identify it. Each profile is just a set of trip thresholds, and those
-live at `0xA04D`-`0xA0F9` and are individually readable and writable. If your grid
-operator requires particular voltage or frequency limits, set them directly and read them
-back rather than hunting for the right preset number.
+`grid_export_limit_number` writes both Modbus copies. It does not write `3039`, which is
+not on Modbus, so raising the cap above whatever `3039` holds changes nothing. To raise
+`3039`, put an `ems 3039 <watts>` line in a restore file and POST it.
 
-## Two things that surprise people
+The name is the firmware's. It caps on-grid *output*, which includes power serving your
+own load, so it is not an export limit on its own.
 
-**The grid-tie cap lives in three places.** `0xA03F`, its second copy at `0x9ACE`, and the
-energy manager's own limit. Output tops out at the lowest of them, so raising one and
-seeing no change is the expected result rather than a fault.
+## Settings whose mapping is unconfirmed
 
-**`0xA036` is named for the neutral–earth bond but may not be it.** Enabling it never
-produced a referenced island on the unit this was mapped from. Treat the name as a label,
-not a promise.
+**`0xA036` is named for the neutral–earth bond but may not be it.** It reads 1 while the
+app shows it disabled, which inverts the polarity every other boolean follows, and
+enabling it never produced a referenced island. It has no key, so reaching it takes an
+explicit `registers:` entry.
+
+**`0xA031` does not match the app.** It reads 35.0 A where the app shows 50 A for the same
+setting. `0xA02F` matches its app figure correctly, so the discrepancy is specific to this
+register.
+
+**`0xA028` is plausibly the inverter operating mode** and was never confirmed against the
+app.
 
 ## Not on Modbus
 

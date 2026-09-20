@@ -9,9 +9,8 @@ namespace aecc {
 
 /// Write any register, whether or not it is modelled as an entity.
 ///
-/// The map in registers.h is what has been identified, not what exists. Without this,
-/// a setting nobody has named yet would be unreachable — and this component is the only
-/// way to reach the hardware once the vendor's servers are gone.
+/// The map in registers.h is what has been identified, not what exists, so a setting
+/// nobody has named yet still needs a way through.
 template<typename... Ts> class WriteRegisterAction : public Action<Ts...> {
  public:
   explicit WriteRegisterAction(AeccComponent *parent) : parent_(parent) {}

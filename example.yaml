@@ -45,16 +45,43 @@ aecc:
   datalogger:
     host: 192.0.2.10          # the unit's own WiFi module, on your LAN
     resting_power: -300
+    resting_power_number: Resting power
   meter:
     type: rs071
     uart_id: bus_meter
-  zero_export:
+  control:
     rate: 2Hz
     grid_target: 60
     max_discharge: 600
     max_charge: 2400
     min_soc: 15%
     max_soc: 90%
+    # Naming one turns it into a Home Assistant control, starting from the value above.
+    setpoint_number: Battery power
+    grid_target_number: Grid target
+    max_discharge_number: Max discharge
+    max_charge_number: Max charge
+    min_soc_number: Reserve
+    max_soc_number: Charge ceiling
+
+  # Battery settings. The defaults for address, range, scale and unit come from the
+  # component; override any of them the way soc_shutdown_number does here.
+  grid_export_limit_number: Grid export limit
+  max_charge_current_number: Max charge current
+  soc_shutdown_number:
+    name: Shut down at
+    min_value: 5
+    max_value: 50
+  buzzer_mute_switch: Buzzer mute
+  eco_mode_switch: Energy saving
+  on_grid_mode_select: On-grid mode
+  utility_range_select: Utility range
+
+  # Anything the component does not model.
+  registers:
+    - name: Parallel mode
+      address: 0xA02C
+      max_value: 7
 
 sensor:
   - platform: aecc
@@ -78,8 +105,9 @@ sensor:
     commanded_power:
       name: Commanded power
     registers:
-      - name: Grid export limit
-        address: 0xA03F
+      - name: Grid overvoltage trip
+        address: 0xA04D
+        scale: 0.1
         interval: 60s
 
 binary_sensor:
@@ -89,26 +117,6 @@ binary_sensor:
       name: Setpoint honoured
     meter_ok:
       name: Meter OK
-
-number:
-  - platform: aecc
-    aecc_id: nova
-    control: grid_target_w
-    name: Grid target
-  - platform: aecc
-    aecc_id: nova
-    control: max_discharge_w
-    name: Max discharge
-  - platform: aecc
-    aecc_id: nova
-    control: max_charge_w
-    name: Max charge
-  - platform: aecc
-    aecc_id: nova
-    address: 0xA03F
-    name: Grid export limit
-    max_value: 15000
-    step: 100
 
 button:
   - platform: aecc

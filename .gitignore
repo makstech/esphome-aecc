@@ -29,3 +29,6 @@ Thumbs.db
 *.bak
 *.backup
 *_backup.bin
+
+# Agent context; the protocol knowledge base it points at is a separate private repo
+CLAUDE.md
