@@ -1,0 +1,126 @@
+esphome:
+  name: aecc-battery
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+logger:
+  level: INFO
+
+web_server:
+  version: 3
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+
+uart:
+  - id: bus_inverter
+    tx_pin: GPIO32
+    rx_pin: GPIO33
+    baud_rate: 9600
+  - id: bus_meter
+    tx_pin: GPIO25
+    rx_pin: GPIO26
+    baud_rate: 9600
+
+aecc:
+  id: nova
+  uart_id: bus_inverter
+  backup:
+    url: /aecc/backup
+  datalogger:
+    host: 192.0.2.10          # the unit's own WiFi module, on your LAN
+    resting_power: -300
+  meter:
+    type: rs071
+    uart_id: bus_meter
+  zero_export:
+    rate: 2Hz
+    grid_target: 60
+    max_discharge: 600
+    max_charge: 2400
+    min_soc: 15%
+    max_soc: 90%
+
+sensor:
+  - platform: aecc
+    aecc_id: nova
+    soc:
+      name: Battery SOC
+    battery_power:
+      name: Battery power
+    grid_power:
+      name: Grid power
+    backup_load:
+      name: Backup load
+    setpoint:
+      name: Setpoint
+    meter_power:
+      name: Meter grid power
+    meter_age:
+      name: Meter sample age
+    loop_rate:
+      name: Control loop rate
+    commanded_power:
+      name: Commanded power
+    registers:
+      - name: Grid export limit
+        address: 0xA03F
+        interval: 60s
+
+binary_sensor:
+  - platform: aecc
+    aecc_id: nova
+    control_effective:
+      name: Setpoint honoured
+    meter_ok:
+      name: Meter OK
+
+number:
+  - platform: aecc
+    aecc_id: nova
+    control: grid_target_w
+    name: Grid target
+  - platform: aecc
+    aecc_id: nova
+    control: max_discharge_w
+    name: Max discharge
+  - platform: aecc
+    aecc_id: nova
+    control: max_charge_w
+    name: Max charge
+  - platform: aecc
+    aecc_id: nova
+    address: 0xA03F
+    name: Grid export limit
+    max_value: 15000
+    step: 100
+
+button:
+  - platform: aecc
+    aecc_id: nova
+    backup:
+      name: Back up configuration
+
+  - platform: template
+    name: Set battery type LiFePO4 16S
+    entity_category: config
+    on_press:
+      - aecc.write_register:
+          id: nova
+          address: 0xA08C
+          value: 6
