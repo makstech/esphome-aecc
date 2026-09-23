@@ -63,6 +63,7 @@ aecc:
   uart_id: bus_inverter
   backup:
     url: /aecc/backup
+  work_mode_select: Work mode
   datalogger:
     host: 192.0.2.10
     resting_power_number: Resting power

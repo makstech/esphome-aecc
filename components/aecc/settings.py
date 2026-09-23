@@ -77,10 +77,70 @@ SWITCHES = {
 }
 
 # Only where the value list is actually known.
+# Labels are the app's own, so the two agree when read side by side.
 SELECTS = {
     "utility_range": dict(
         address=0xA02B,
-        options={0: "UPS", 1: "APL", 2: "Generator"},
+        options={0: "UPS mode", 1: "APL mode", 2: "GEN mode"},
+    ),
+    "inverter_mode": dict(
+        address=0xA028,
+        options={
+            0: "Photovoltaic priority (PV)",
+            1: "Utility power priority (GID)",
+            2: "PV Battery Priority (BAT)",
+            3: "Hybrid Priority (HBD)",
+        },
+    ),
+    "battery_type": dict(
+        address=0xA08C,
+        options={
+            0: "Custom Type",
+            1: "SLD-Sealed Lead Acid",
+            2: "FLD-Flooded Lead Acid",
+            3: "GEL-Gel Lead Acid",
+            4: "LiFePO4 14S",
+            5: "LiFePO4 15S",
+            6: "LiFePO4 16S",
+            7: "LiFePO4 7S",
+            8: "LiFePO4 8S",
+            9: "LiFePO4 9S",
+            10: "Ternary Lithium 7S",
+            11: "Ternary Lithium 8S",
+            12: "Ternary Lithium 13S",
+            13: "Ternary Lithium 14S",
+        },
+    ),
+    "parallel_mode": dict(
+        address=0xA02C,
+        options={
+            0: "Stand-alone",
+            1: "Parallel operation",
+            2: "Split phase reference phase",
+            3: "Split phase with 120° difference from reference phase",
+            4: "Phase with 180° difference between split phase and reference phase",
+            5: "First of three phases",
+            6: "Second of three phases",
+            7: "Third phase of three phases",
+        },
+    ),
+    "bms_protocol": dict(
+        address=0xA09A,
+        options={
+            0: "Voltronic", 1: "Pylon", 2: "Aoguan", 3: "Oulite", 4: "Gotion",
+            5: "Sunwoda", 6: "CF", 7: "Dyuness", 8: "Pace", 9: "BST",
+            10: "Foxess", 11: "AEC", 12: "Pylon-V3.5", 13: "MeZic-V3.5",
+            14: "Tentek", 15: "Rvtran", 16: "YUZE", 17: "EVT",
+        },
+    ),
+    "charge_priority": dict(
+        address=0xA02E,
+        options={
+            0: "Photovoltaic priority (OSO)",
+            1: "Utility Priority (OUO)",
+            2: "Mixed mode (SNU)",
+            3: "PV only (NUC)",
+        },
     ),
     "grid_standard": dict(
         address=0xA043,
@@ -101,10 +161,10 @@ SELECTS = {
     "on_grid_mode": dict(
         address=0xA034,
         options={
-            0: "Solar to load",
+            0: "PV to load",
             1: "PV to grid",
-            2: "Anti-backflow via CT",
-            3: "Anti-backflow via smart device",
+            2: "Prevention of power flow into the grid (external CT sensor)",
+            3: "Power flow prevention (external smart device)",
         },
     ),
 }

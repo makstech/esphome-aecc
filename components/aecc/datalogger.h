@@ -9,6 +9,13 @@
 namespace esphome {
 namespace aecc {
 
+/// What the battery's own scheduler is doing. The values are the register's own, so a
+/// reading maps straight onto the enum.
+enum class WorkMode : uint8_t {
+  SELF_CONSUMPTION = 3,
+  CUSTOM = 6,
+};
+
 /// Newline-delimited JSON over TCP 8080 on the unit's built-in WiFi module.
 ///
 /// This is the only way to reach the EMS registers: they are not Modbus-addressable, and

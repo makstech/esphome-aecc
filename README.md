@@ -139,6 +139,24 @@ Off is the default, and it is genuinely off: the component stops reasserting the
 own scheduler too, so it will not fight you while you drive the battery some other way.
 Zero export only appears in the list when you have given the component a `meter:`.
 
+### Handing the battery back
+
+Off stops the component writing, but it leaves the battery's own scheduler wherever the
+component last put it — parked, doing nothing. A `datalogger:` block therefore also gives
+you a **Work mode** dropdown, for handing the battery back to its built-in
+self-consumption automation. Name it with `work_mode_select:` to change the label.
+
+| Battery mode | Work mode | What runs the battery |
+|---|---|---|
+| Off | Self-consumption | The battery's own automation |
+| Off | Custom | Nothing; it idles on the resting slot |
+| Zero export or Manual | Custom | This component |
+
+Self-consumption can only be selected while the battery mode is Off, because the other two
+modes need Custom and put it back. Note that the battery's automation rewrites the
+schedule slot and the SOC limits to suit itself, and it is free to export — so it is not a
+substitute for zero export where feeding in is not allowed.
+
 ```yaml
 uart:
   - id: bus_inverter
@@ -247,7 +265,7 @@ on/off setting, `_select` for a list of choices.
 |---|---|
 | `_number` | `grid_export_limit`, `output_voltage`, `output_frequency`, `max_charge_current`, `pv_max_charge_current`, `mains_max_charge_current`, `saturation_current`, `cv_voltage`, `float_voltage`, `cv_charge_time`, `cv_return_voltage`, `battery_to_mains_voltage`, `mains_to_battery_voltage`, `undervoltage_alarm`, `low_voltage_shutdown`, `eod_voltage`, `shutdown_delay`, `eod_clear_voltage`, `soc_low_alarm`, `soc_shutdown`, `soc_full`, `soc_inverter_to_mains`, `soc_mains_to_inverter` |
 | `_switch` | `device_power`, `eco_mode`, `buzzer_mute`, `battery_activation`, `mixing_priority`, `external_ct_host`, `anti_islanding`, `bms_function`, `independent_pack` |
-| `_select` | `utility_range`, `on_grid_mode`, `grid_standard` |
+| `_select` | `utility_range`, `on_grid_mode`, `grid_standard`, `inverter_mode`, `charge_priority`, `battery_type`, `parallel_mode`, `bms_protocol` |
 
 Some do more than they sound like. `device_power` switches the inverter off.
 `anti_islanding` off stops it disconnecting from a dead grid. `bms_function` off drops the

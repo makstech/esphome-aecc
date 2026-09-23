@@ -7,6 +7,22 @@ namespace aecc {
 
 /// Inverter holding registers, slave 1 at 9600 8N1 on the RJ45's pins 7/8.
 /// Names are the vendor app's own identifiers.
+/// The energy manager's own registers. Not Modbus-addressable — these go over the
+/// datalogger's JSON API.
+namespace ems {
+
+constexpr uint16_t ENABLE = 3000;        // nothing regulates while this is 0
+constexpr uint16_t SLOT = 3003;          // the first of sixteen; the only one used here
+constexpr uint16_t SCHEDULE_MODE = 3020;
+constexpr uint16_t AI_CHARGE = 3021;
+constexpr uint16_t AI_DISCHARGE = 3022;
+constexpr uint16_t BASE_DISCHARGE = 3026;  // positive exports unconditionally
+constexpr uint16_t BASE_DISCHARGE_EN = 3029;
+constexpr uint16_t CUSTOM_MODE = 3030;   // required before 0xFE16 is honoured
+constexpr uint16_t MAX_FEED_POWER = 3039;
+
+}  // namespace ems
+
 namespace reg {
 
 // Control

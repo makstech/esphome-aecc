@@ -57,7 +57,7 @@ Read-only, and each has a `sensor:` key.
 
 | Meaning | Key | Address | Vendor name | `scale:` |
 |---|---|---|---|---|
-| [Battery type](#battery-type) | — | `0xA08C` | `batType` | `1` |
+| [Battery type](#battery-type) | `battery_type` | `0xA08C` | `batType` | `1` |
 | Constant voltage | `cv_voltage` | `0xA08D` | `cvVolt` | `0.1` |
 | Float voltage | `float_voltage` | `0xA08E` | `floatVolt` | `0.1` |
 | Constant voltage charging time, minutes | `cv_charge_time` | `0xA090` | `cvChgTimeSet` | `1` |
@@ -70,7 +70,7 @@ Read-only, and each has a `sensor:` key.
 | Voltage shutdown delay, seconds | `shutdown_delay` | `0xA097` | `battDelayOffTime` | `1` |
 | End-of-discharge clear voltage | `eod_clear_voltage` | `0xA098` | `battEodBackVolt` | `0.1` |
 | RS485 BMS link, off drops it | `bms_function` | `0xA099` | `bmsSet` | `1` |
-| [BMS protocol](#bms-protocol) | — | `0xA09A` | `bmsProtocal` | `1` |
+| [BMS protocol](#bms-protocol) | `bms_protocol` | `0xA09A` | `bmsProtocal` | `1` |
 | Battery activation | `battery_activation` | `0xA03E` | `battActiveSet` | `1` |
 | Independent pack enable | `independent_pack` | `0xA0AF` | `battPackNotUnion` | `1` |
 
@@ -78,7 +78,7 @@ Read-only, and each has a `sensor:` key.
 
 | Meaning | Key | Address | Vendor name | `scale:` |
 |---|---|---|---|---|
-| [Charge priority](#charge-priority) | — | `0xA02E` | `chgPriority` | `1` |
+| [Charge priority](#charge-priority) | `charge_priority` | `0xA02E` | `chgPriority` | `1` |
 | Max charge current, stand-alone | `max_charge_current` | `0xA02F` | `maxChgCurrSet` | `0.1` |
 | Max charge current from PV | `pv_max_charge_current` | `0xA030` | `chgCurrByPvSet` | `0.1` |
 | Max charge current from mains — unconfirmed, see below | `mains_max_charge_current` | `0xA031` | `chgCurrByLineSet` | `0.1` |
@@ -99,14 +99,14 @@ Read-only, and each has a `sensor:` key.
 | Meaning | Key | Address | Vendor name | `scale:` |
 |---|---|---|---|---|
 | Device on/off — switches the inverter off | `device_power` | `0x9C40` | `onOffCtrl` | `1` |
-| [Inverter operating mode](#inverter-operating-mode) | — | `0xA028` | `outPriority` | `1` |
+| [Inverter operating mode](#inverter-operating-mode) | `inverter_mode` | `0xA028` | `outPriority` | `1` |
 | Output voltage | `output_voltage` | `0xA029` | `outVoltSet` | `0.1` |
 | Output frequency | `output_frequency` | `0xA02A` | `outFreqSet` | `0.01` |
 | [Utility range](#utility-range) | `utility_range` | `0xA02B` | `lineRangeSet` | `1` |
-| [Parallel mode](#parallel-mode) | — | `0xA02C` | `paraModeSet` | `1` |
+| [Parallel mode](#parallel-mode) | `parallel_mode` | `0xA02C` | `paraModeSet` | `1` |
 | Energy saving mode | `eco_mode` | `0xA02D` | `ecoEn` | `1` |
 | Buzzer mute | `buzzer_mute` | `0xA033` | `muteEn` | `1` |
-| [On-grid mode](#on-grid-mode) | `on_grid_mode` | `0xA034` | `onGirdSet` | `1` |
+| [Energy internet setting](#on-grid-mode) | `on_grid_mode` | `0xA034` | `onGirdSet` | `1` |
 | Neutral–earth bond — probably not, see below | — | `0xA036` | `nG_FuncEn` | `1` |
 | Grid-tie power cap, W — see below | `grid_export_limit` | `0xA03F` | `onGridActivePowerSet` | `1` |
 | Grid-tie power cap, second copy, W | — | `0x9ACE` | — | `1` |
@@ -131,9 +131,9 @@ none, so reaching those takes an explicit `registers:` entry.
 
 | | |
 |---|---|
-| `0` | UPS |
-| `1` | APL |
-| `2` | Generator |
+| `0` | UPS mode |
+| `1` | APL mode |
+| `2` | GEN mode |
 
 ### On-grid mode
 
@@ -142,10 +142,10 @@ feeding a grid reading from your own meter rather than the bundled CT.
 
 | | |
 |---|---|
-| `0` | Solar to load |
+| `0` | PV to load |
 | `1` | PV to grid |
-| `2` | Anti-backflow via CT |
-| `3` | Anti-backflow via smart device |
+| `2` | Prevention of power flow into the grid (external CT sensor) |
+| `3` | Power flow prevention (external smart device) |
 
 ### Parallel mode
 
@@ -155,28 +155,58 @@ split-phase.
 | | |
 |---|---|
 | `0` | Stand-alone |
-| `1` | Parallel |
-| `2` | Split-phase reference |
-| `3` | Split-phase at 120° |
-| `4` | Split-phase at 180° |
-| `5`–`7` | First, second, third of three phases |
+| `1` | Parallel operation |
+| `2` | Split phase reference phase |
+| `3` | Split phase with 120° difference from reference phase |
+| `4` | Phase with 180° difference between split phase and reference phase |
+| `5`–`7` | First, second, third phase of three phases |
 
 ### Battery type
 
-`0xA08C` `batType` — only `6` = LiFePO4 16S was identified, so there is no key.
+`0xA08C` `batType` — the pack chemistry and cell count.
+
+| | |
+|---|---|
+| `0` | Custom Type |
+| `1` | SLD-Sealed Lead Acid |
+| `2` | FLD-Flooded Lead Acid |
+| `3` | GEL-Gel Lead Acid |
+| `4`–`6` | LiFePO4 14S, 15S, 16S |
+| `7`–`9` | LiFePO4 7S, 8S, 9S |
+| `10`–`13` | Ternary Lithium 7S, 8S, 13S, 14S |
 
 ### BMS protocol
 
-`0xA09A` `bmsProtocal` — only `1` = Pylontech was identified, so there is no key.
+`0xA09A` `bmsProtocal` — which BMS the pack speaks. This unit ships on `1`.
+
+| | |
+|---|---|
+| `0`–`4` | Voltronic, Pylon, Aoguan, Oulite, Gotion |
+| `5`–`9` | Sunwoda, CF, Dyuness, Pace, BST |
+| `10`–`13` | Foxess, AEC, Pylon-V3.5, MeZic-V3.5 |
+| `14`–`17` | Tentek, Rvtran, YUZE, EVT |
 
 ### Charge priority
 
-`0xA02E` `chgPriority` — list not established, so there is no key.
+`0xA02E` `chgPriority` — where the charge current comes from.
+
+| | |
+|---|---|
+| `0` | Photovoltaic priority (OSO) |
+| `1` | Utility Priority (OUO) |
+| `2` | Mixed mode (SNU) |
+| `3` | PV only (NUC) |
 
 ### Inverter operating mode
 
-`0xA028` `outPriority` — list not established and the register is not confirmed to be the
-operating mode at all, so there is no key.
+`0xA028` `outPriority` — which source serves the load first.
+
+| | |
+|---|---|
+| `0` | Photovoltaic priority (PV) |
+| `1` | Utility power priority (GID) |
+| `2` | PV Battery Priority (BAT) |
+| `3` | Hybrid Priority (HBD) |
 
 ### Grid standard
 
@@ -241,3 +271,14 @@ app.
 The energy manager's own registers — the schedule slots, the enable flag, the SOC window —
 are only reachable over the unit's JSON API. The component handles those itself when you
 give it a `datalogger:` block.
+
+| Register | Meaning |
+|---|---|
+| `3000` | Energy manager enable; nothing regulates while it is 0 |
+| `3003`–`3018` | Sixteen schedule slots, eleven CSV fields; field four is the signed setpoint |
+| `3020` | Scheduler mode: 3 self-consumption, 6 custom — the `work_mode_select` key |
+| `3021` / `3022` | Self-consumption charge and discharge enables |
+| `3023` / `3024` | Min and max SOC, % |
+| `3026` / `3029` | Base discharge power and its enable; positive exports unconditionally |
+| `3030` | Custom mode; required before `0xFE16` is honoured |
+| `3039` | Max feed power, W — the third copy of the grid-tie cap |

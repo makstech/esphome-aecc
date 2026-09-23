@@ -54,6 +54,22 @@ void AeccComponent::unlock_() {
 #endif
 }
 
+bool AeccComponent::work_mode(WorkMode *out) {
+  this->lock_();
+  const bool valid = this->work_mode_valid_;
+  if (valid)
+    *out = this->work_mode_;
+  this->unlock_();
+  return valid;
+}
+
+void AeccComponent::request_work_mode(WorkMode mode) {
+  this->lock_();
+  this->wanted_work_mode_ = mode;
+  this->work_mode_pending_ = true;
+  this->unlock_();
+}
+
 bool AeccComponent::commanding_() const {
   return this->control_ != nullptr && this->control_->mode() != ControlMode::OFF;
 }
@@ -359,6 +375,61 @@ void AeccComponent::check_ports_() {
   }
 }
 
+void AeccComponent::observe_ems_() {
+  std::map<uint16_t, std::string> got;
+  if (!this->dl_.read({ems::SCHEDULE_MODE, ems::AI_CHARGE, ems::AI_DISCHARGE}, got))
+    return;
+  const uint16_t raw = (uint16_t) strtoul(got[ems::SCHEDULE_MODE].c_str(), nullptr, 10);
+  if (raw != (uint16_t) WorkMode::SELF_CONSUMPTION && raw != (uint16_t) WorkMode::CUSTOM) {
+    ESP_LOGW(TAG, "scheduler mode reads %u, which is neither self-consumption nor custom", raw);
+    return;
+  }
+  this->lock_();
+  this->work_mode_ = (WorkMode) raw;
+  this->work_mode_valid_ = true;
+  // Only worth keeping while the battery is running its own automation; once we force
+  // custom these are zero and remembering that would defeat the point.
+  if (this->work_mode_ == WorkMode::SELF_CONSUMPTION) {
+    this->ai_charge_ = got[ems::AI_CHARGE];
+    this->ai_discharge_ = got[ems::AI_DISCHARGE];
+  }
+  this->unlock_();
+}
+
+void AeccComponent::apply_work_mode_() {
+  this->lock_();
+  const WorkMode want = this->wanted_work_mode_;
+  this->work_mode_pending_ = false;
+  const std::string charge = this->ai_charge_, discharge = this->ai_discharge_;
+  this->unlock_();
+
+  std::map<uint16_t, std::string> fix;
+  if (want == WorkMode::CUSTOM) {
+    fix = {{ems::SCHEDULE_MODE, "6"}, {ems::AI_CHARGE, "0"},
+           {ems::AI_DISCHARGE, "0"}, {ems::CUSTOM_MODE, "1"}};
+  } else {
+    fix = {{ems::SCHEDULE_MODE, "3"}, {ems::CUSTOM_MODE, "0"}};
+    // What the AI enables should be is not recorded anywhere, so put back what the
+    // battery had rather than inventing values. Without a reading, leave them alone and
+    // say so: the app can set them.
+    if (!charge.empty() && !discharge.empty()) {
+      fix[ems::AI_CHARGE] = charge;
+      fix[ems::AI_DISCHARGE] = discharge;
+    } else {
+      ESP_LOGW(TAG, "no remembered AI charge/discharge enables; if self-consumption does "
+                    "nothing, turn smart charge and discharge on in the vendor app");
+    }
+  }
+  if (!this->dl_.write(fix)) {
+    ESP_LOGW(TAG, "could not set the scheduler mode");
+    return;
+  }
+  this->lock_();
+  this->work_mode_ = want;
+  this->work_mode_valid_ = true;
+  this->unlock_();
+}
+
 void AeccComponent::reconcile_() {
   // 0xFE16 only modulates a command the energy manager is already running, so these are
   // what make the control loop work at all. The vendor app's AI mode rewrites them
@@ -505,6 +576,25 @@ void AeccComponent::bus_task_() {
       this->was_commanding_ = false;
       // Whatever the EMS holds now is no longer this component's doing.
       this->ems_ready_ = false;
+    }
+
+    if (this->dl_.configured()) {
+      this->lock_();
+      const bool pending = this->work_mode_pending_;
+      this->unlock_();
+      if (pending) {
+        // Someone asked for this, so it is not the loop breaking its silence.
+        this->apply_work_mode_();
+        this->feed_wdt_();
+        continue;
+      }
+      // Reading is not writing, so this runs in Off too and the entity stays honest.
+      if (!commanding && millis() - this->observed_at_ > this->reconcile_ms_) {
+        this->observed_at_ = millis();
+        this->observe_ems_();
+        this->feed_wdt_();
+        continue;
+      }
     }
     if (this->dl_.configured() && commanding &&
         (!this->was_commanding_ || millis() - this->reconciled_at_ > this->reconcile_ms_)) {

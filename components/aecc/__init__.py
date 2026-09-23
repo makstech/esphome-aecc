@@ -43,6 +43,8 @@ AeccSwitch = aecc_ns.class_("AeccSwitch", switch.Switch, cg.Component)
 AeccSelect = aecc_ns.class_("AeccSelect", select.Select, cg.Component)
 ControlModeSelect = aecc_ns.class_("ControlModeSelect", select.Select, cg.Component)
 ControlMode = aecc_ns.enum("ControlMode", is_class=True)
+WorkModeSelect = aecc_ns.class_("WorkModeSelect", select.Select, cg.Component)
+WorkMode = aecc_ns.enum("WorkMode", is_class=True)
 ControlParam = aecc_ns.enum("ControlParam", is_class=True)
 RestoreHandler = aecc_ns.class_("RestoreHandler", cg.Component)
 
@@ -74,6 +76,7 @@ CONF_RESTORE_ID = "restore_id"
 CONF_RESTORE_URL = "restore_url"
 CONF_MODE_SELECT = "mode_select"
 CONF_SETPOINT = "setpoint"
+CONF_WORK_MODE_SELECT = "work_mode_select"
 CONF_MIRROR = "mirror"
 CONF_SIGNED = "signed"
 
@@ -251,6 +254,11 @@ MODES = {
     "Manual": "MANUAL",
 }
 
+WORK_MODES = {
+    "Self-consumption": "SELF_CONSUMPTION",
+    "Custom": "CUSTOM",
+}
+
 CONTROL_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Controller),
@@ -292,6 +300,7 @@ def _in_number_range(conf, key, number_key, path):
 
 
 def _validate(config):
+
     if CONF_DATALOGGER in config:
         _in_number_range(config[CONF_DATALOGGER], CONF_RESTING_POWER,
                          f"{CONF_RESTING_POWER}_number", [CONF_DATALOGGER])
@@ -333,6 +342,11 @@ CONFIG_SCHEMA = cv.All(
             # schedule slot has to be set by hand and nothing keeps it there.
             cv.Optional(CONF_DATALOGGER): DATALOGGER_SCHEMA,
             cv.Optional(CONF_REGISTERS, default=[]): cv.ensure_list(REGISTER_SCHEMA),
+            # The battery's own scheduler mode, which is not on Modbus. Created with the
+            # datalogger, because without it Off parks the battery with no way back.
+            cv.Optional(CONF_WORK_MODE_SELECT, default="Work mode"): _named(
+                select.select_schema(WorkModeSelect).extend(cv.COMPONENT_SCHEMA)
+            ),
         }
     )
     .extend(_suffixed({k: _number(v) for k, v in NUMBERS.items()}, "number"))
@@ -404,6 +418,14 @@ async def _register_entities(parent, config):
             cg.add(var.add_option(value, label))
     for conf in config[CONF_REGISTERS]:
         await _register_number(parent, conf)
+    # Only reachable over the datalogger's API, so there is nothing to expose without one.
+    conf = config.get(CONF_WORK_MODE_SELECT) if CONF_DATALOGGER in config else None
+    if conf is not None:
+        var = await select.new_select(conf, options=list(WORK_MODES))
+        await cg.register_component(var, conf)
+        cg.add(var.set_parent(parent))
+        for label, member in WORK_MODES.items():
+            cg.add(var.add_mode(getattr(WorkMode, member), label))
 
 
 async def to_code(config):

@@ -99,6 +99,26 @@ class ControlModeSelect : public select::Select, public Component, public AeccDe
   ESPPreferenceObject pref_;
 };
 
+/// The battery's own scheduler mode. Off hands the battery back to its automation; the
+/// other control modes need custom, and the reconcile forces it, so this refuses to
+/// fight them.
+class WorkModeSelect : public select::Select, public Component, public AeccDevice {
+ public:
+  void setup() override;
+  void loop() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA + 1.0f; }
+
+  void add_mode(WorkMode mode, const std::string &label) { this->modes_[label] = mode; }
+
+ protected:
+  void control(const std::string &value) override;
+
+  std::map<std::string, WorkMode> modes_;
+  bool have_published_{false};
+  WorkMode published_{WorkMode::CUSTOM};
+};
+
 class AeccSwitch : public switch_::Switch, public Component, public RegisterBacked {
  public:
   void setup() override;

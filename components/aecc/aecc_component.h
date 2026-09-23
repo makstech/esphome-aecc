@@ -97,6 +97,12 @@ class AeccComponent : public Component
   void set_reconcile_interval(uint32_t ms) { this->reconcile_ms_ = ms; }
   /// True once the EMS has been seen holding the state the control loop needs.
   bool ems_ready() const { return this->ems_ready_; }
+
+  /// The scheduler mode last read back. Reading happens in every control mode; only
+  /// writing is gated, so the entity stays honest while the component is idle.
+  bool work_mode(WorkMode *out);
+  /// Queued for the bus task: the datalogger blocks, so it cannot be written from here.
+  void request_work_mode(WorkMode mode);
   bool datalogger_configured() const { return this->dl_.configured(); }
   bool ports_ok() const { return this->ports_ok_; }
 
@@ -156,6 +162,11 @@ class AeccComponent : public Component
   std::string restore_report_;
   std::map<uint16_t, std::string> restore_ems_;
   void reconcile_();
+  /// Reads the scheduler mode without writing anything.
+  void observe_ems_();
+  /// Applies a queued work mode. Switching away from self-consumption remembers the two
+  /// AI enables so switching back can put them there rather than guess at them.
+  void apply_work_mode_();
   /// Two swapped leads would point setpoint writes at the meter. Positive evidence only:
   /// a unit whose configuration has been wiped answers nothing, and that must not stop
   /// the component being used to restore it.
@@ -171,6 +182,12 @@ class AeccComponent : public Component
   uint32_t reconcile_ms_{60000};
   uint32_t reconciled_at_{0};
   bool ems_ready_{false};
+  uint32_t observed_at_{0};
+  WorkMode work_mode_{WorkMode::CUSTOM};
+  bool work_mode_valid_{false};
+  WorkMode wanted_work_mode_{WorkMode::CUSTOM};
+  bool work_mode_pending_{false};
+  std::string ai_charge_, ai_discharge_;
   bool backup_ems_{false};
 
   /// A mistyped address would otherwise be polled forever. Sustained illegal reads can

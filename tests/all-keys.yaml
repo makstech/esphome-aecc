@@ -36,6 +36,7 @@ aecc:
   uart_id: bus_inverter
   backup:
     url: /aecc/backup
+  work_mode_select: Work mode
   datalogger:
     host: 192.0.2.10
     resting_power_number: Resting power
@@ -83,6 +84,11 @@ aecc:
   bms_function_switch: bms function
   independent_pack_switch: independent pack
   utility_range_select: utility range
+  inverter_mode_select: inverter mode
+  battery_type_select: battery type
+  parallel_mode_select: parallel mode
+  bms_protocol_select: bms protocol
+  charge_priority_select: charge priority
   grid_standard_select: grid standard
   on_grid_mode_select: on grid mode
   registers:

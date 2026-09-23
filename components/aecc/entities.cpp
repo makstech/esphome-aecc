@@ -190,6 +190,51 @@ void ControlModeSelect::control(const std::string &value) {
 
 void ControlModeSelect::dump_config() { LOG_SELECT("", "AECC control mode", this); }
 
+// --- work mode --------------------------------------------------------------
+
+void WorkModeSelect::setup() {
+  if (this->parent_ == nullptr || !this->parent_->datalogger_configured()) {
+    ESP_LOGE(TAG, "work_mode_select needs a datalogger");
+    this->mark_failed();
+    return;
+  }
+}
+
+void WorkModeSelect::loop() {
+  WorkMode mode;
+  if (!this->parent_->work_mode(&mode))
+    return;
+  if (this->have_published_ && mode == this->published_)
+    return;
+  for (const auto &option : this->modes_) {
+    if (option.second != mode)
+      continue;
+    this->published_ = mode;
+    this->have_published_ = true;
+    this->publish_state(option.first);
+    return;
+  }
+}
+
+void WorkModeSelect::control(const std::string &value) {
+  const auto found = this->modes_.find(value);
+  if (found == this->modes_.end()) {
+    ESP_LOGW(TAG, "'%s' is not a known work mode", value.c_str());
+    return;
+  }
+  auto *control = this->parent_->control();
+  if (found->second == WorkMode::SELF_CONSUMPTION && control != nullptr &&
+      control->mode() != ControlMode::OFF) {
+    // The reconcile would put it straight back, so the entity would flap rather than
+    // hold what was asked for.
+    ESP_LOGW(TAG, "self-consumption needs the control mode off");
+    return;
+  }
+  this->parent_->request_work_mode(found->second);
+}
+
+void WorkModeSelect::dump_config() { LOG_SELECT("", "AECC work mode", this); }
+
 // --- switch -----------------------------------------------------------------
 
 void AeccSwitch::setup() {
