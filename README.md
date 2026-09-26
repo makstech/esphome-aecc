@@ -91,36 +91,36 @@ configured, so a setup without a meter has no meter readings.
 
 **Readings**
 
-| Name | What it is |
-|---|---|
-| Battery SOC | State of charge, % |
-| Battery power | Positive when discharging |
-| Grid power | At the battery's own connection, positive when exporting |
-| Backup load | Load on the battery's own socket |
-| Setpoint | What the battery has been told to do |
-| Losses | Standby and conversion losses |
+| Key | Name | What it is |
+|---|---|---|
+| `soc_sensor` | Battery SOC | State of charge, % |
+| `battery_power_sensor` | Battery power | Positive when discharging |
+| `grid_power_sensor` | Grid power | At the battery's own connection, positive when exporting |
+| `backup_load_sensor` | Backup load | Load on the battery's own socket |
+| `setpoint_sensor` | Setpoint | What the battery has been told to do |
+| `losses_sensor` | Losses | Standby and conversion losses |
 
 **Control diagnostics** — with `control:`, and the meter ones also with `meter:`
 
-| Name | What it is |
-|---|---|
-| Meter grid power | What your meter is reading right now |
-| Meter grid power, filtered | The same after smoothing, which is what the loop acts on |
-| Commanded power | What the loop is asking the battery for |
-| Meter sample age | Seconds since the last good meter reading |
-| Control loop rate | How often the loop is actually running, Hz |
+| Key | Name | What it is |
+|---|---|---|
+| `meter_power_sensor` | Meter grid power | What your meter is reading right now |
+| `meter_power_filtered_sensor` | Meter grid power, filtered | The same after smoothing, which is what the loop acts on |
+| `commanded_power_sensor` | Commanded power | What the loop is asking the battery for |
+| `meter_age_sensor` | Meter sample age | Seconds since the last good meter reading |
+| `loop_rate_sensor` | Control loop rate | How often the loop is actually running, Hz |
 
 **Health**
 
-| Name | On means | Needs |
-|---|---|---|
-| Setpoint honoured | The battery is obeying the setpoint | `control:` |
-| Meter OK | The meter is answering with fresh readings | `control:` + `meter:` |
-| Scheduler ready | The battery's scheduler is set up for local control | `control:` + `datalogger:` |
+| Key | Name | On means | Needs |
+|---|---|---|---|
+| `control_effective_sensor` | Setpoint honoured | The battery is obeying the setpoint | `control:` |
+| `meter_ok_sensor` | Meter OK | The meter is answering with fresh readings | `meter:` + `control:` |
+| `ems_ready_sensor` | Scheduler ready | The battery's scheduler is set up for local control | `datalogger:` + `control:` |
 
 Setpoint honoured and Meter OK both go off while the mode is Off.
 
-To rename one, name it under `aecc:` with a `_sensor` suffix:
+To rename or reconfigure one, name its key under `aecc:`:
 
 ```yaml
 aecc:
@@ -129,6 +129,9 @@ aecc:
     name: Meter age
     interval: 30s
 ```
+
+[`tests/all-keys.yaml`](tests/all-keys.yaml) is generated from the component and names
+every key it accepts, so it is the exhaustive list if this one has drifted.
 
 **Battery settings** — also under `aecc:`, see [below](#-battery-settings)
 
@@ -328,6 +331,16 @@ A **Datalogger address** text and a **Datalogger** switch come with the block. T
 changes the address without reflashing; the second stops the component using the
 datalogger, for when the vendor app or another integration needs it. Name them with
 `host_text:` and `enable_switch:` to change the labels.
+
+`host:` can be left out entirely, which is the point of the text entity — flash the node,
+then type the address into Home Assistant once you know it:
+
+```yaml
+aecc:
+  id: nova
+  uart_id: bus_inverter
+  datalogger:
+```
 
 ### Why `resting_power` cannot be zero
 

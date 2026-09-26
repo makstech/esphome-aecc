@@ -40,6 +40,7 @@ aecc:
   datalogger:
     host: 192.0.2.10
     host_text: Battery address
+    enable_switch: Datalogger link
     resting_power_number: Resting power
   meter:
     type: rs071
@@ -92,6 +93,20 @@ aecc:
   charge_priority_select: charge priority
   grid_standard_select: grid standard
   on_grid_mode_select: on grid mode
+  soc_sensor: Battery SOC
+  battery_power_sensor: Battery power
+  grid_power_sensor: Grid power
+  backup_load_sensor: Backup load
+  setpoint_sensor: Setpoint
+  losses_sensor: Losses
+  meter_power_sensor: Meter grid power
+  meter_power_filtered_sensor: Meter grid power, filtered
+  commanded_power_sensor: Commanded power
+  meter_age_sensor: Meter sample age
+  loop_rate_sensor: Control loop rate
+  control_effective_sensor: Setpoint honoured
+  meter_ok_sensor: Meter OK
+  ems_ready_sensor: Scheduler ready
   registers:
     - name: Parallel mode
       address: 0xA02C

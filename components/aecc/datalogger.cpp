@@ -49,6 +49,9 @@ std::string Datalogger::slot(int32_t watts, uint8_t max_soc, uint8_t min_soc) {
 }
 
 bool Datalogger::resolve_(uint32_t *addr) {
+  if (this->host_.empty())
+    return false;
+
   struct in_addr literal {};
   if (::inet_pton(AF_INET, this->host_.c_str(), &literal) == 1) {
     *addr = literal.s_addr;

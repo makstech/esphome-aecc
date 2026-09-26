@@ -98,6 +98,15 @@ CONF_MIRROR = "mirror"
 CONF_SIGNED = "signed"
 
 
+def _block(schema):
+    """`key:` with nothing under it means the block with all of its defaults."""
+
+    def validate(value):
+        return schema(value if value is not None else {})
+
+    return validate
+
+
 def _named(schema, default_name=None):
     """A bare string is the entity's name; a mapping is the full schema."""
 
@@ -285,9 +294,10 @@ METER_SCHEMA = cv.typed_schema(
 
 DATALOGGER_SCHEMA = cv.Schema(
     {
-        # An address, a hostname, or an mDNS name; resolved on the device.
-        # Bounded by what the host text entity can store.
-        cv.Required(CONF_HOST): cv.All(cv.string_strict, cv.Length(max=63)),
+        # An address, a hostname, or an mDNS name; resolved on the device. Optional, so
+        # `datalogger:` alone gives you the text entity to set it from Home Assistant on a
+        # unit whose address you do not know yet. Bounded by what that entity can store.
+        cv.Optional(CONF_HOST, default=""): cv.All(cv.string_strict, cv.Length(max=63)),
         cv.Optional(CONF_PORT, default=8080): cv.port,
         # Negative charges. This is the state a dead controller leaves the unit in, and
         # charging cannot export at any load or state of charge.
@@ -410,13 +420,13 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
             cv.Optional(CONF_UNIT, default=1): cv.int_range(min=0, max=255),
             cv.Optional(CONF_METER): METER_SCHEMA,
-            cv.Optional(CONF_CONTROL): CONTROL_SCHEMA,
+            cv.Optional(CONF_CONTROL): _block(CONTROL_SCHEMA),
             # Serving the backup over HTTP needs a web server; without it the button
             # still works and the result is fetched some other way.
-            cv.Optional(CONF_BACKUP): BACKUP_SCHEMA,
+            cv.Optional(CONF_BACKUP): _block(BACKUP_SCHEMA),
             # Reaches the EMS registers, which are not on Modbus. Without it the
             # schedule slot has to be set by hand and nothing keeps it there.
-            cv.Optional(CONF_DATALOGGER): DATALOGGER_SCHEMA,
+            cv.Optional(CONF_DATALOGGER): _block(DATALOGGER_SCHEMA),
             cv.Optional(CONF_REGISTERS, default=[]): cv.ensure_list(REGISTER_SCHEMA),
             # The battery's own scheduler mode, which is not on Modbus. Created with the
             # datalogger, because without it Off parks the battery with no way back.
