@@ -34,6 +34,7 @@ uart:
 aecc:
   id: nova
   uart_id: bus_inverter
+  expose_all_settings: true
   backup:
     url: /aecc/backup
   work_mode_select: Work mode

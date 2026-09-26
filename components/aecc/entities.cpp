@@ -250,11 +250,10 @@ void DataloggerSwitch::dump_config() { LOG_SWITCH("", "AECC datalogger", this); 
 // --- work mode --------------------------------------------------------------
 
 void WorkModeSelect::setup() {
-  if (this->parent_ == nullptr || !this->parent_->datalogger_present()) {
-    ESP_LOGE(TAG, "work_mode_select needs a datalogger");
+  // No host check: the address can arrive later from the text entity, and failing here
+  // would leave the entity dead for the rest of the boot.
+  if (this->parent_ == nullptr)
     this->mark_failed();
-    return;
-  }
 }
 
 void WorkModeSelect::loop() {

@@ -85,10 +85,8 @@ void AeccSensor::dump_config() {
 
 void AeccBinarySensor::setup() {
   if (this->health_ == Health::EMS_READY) {
-    if (this->parent_ == nullptr || !this->parent_->datalogger_present()) {
-      ESP_LOGE(BS_TAG, "ems_ready needs a datalogger to be configured");
+    if (this->parent_ == nullptr)
       this->mark_failed();
-    }
     return;
   }
   if (this->parent_ == nullptr || this->parent_->control() == nullptr) {

@@ -22,68 +22,68 @@ _PCT = dict(unit_of_measurement=UNIT_PERCENT, scale=1, step=1, min_value=0, max_
 _PACK_V = dict(_V, min_value=40.0, max_value=60.0)
 
 NUMBERS = {
-    "grid_export_limit": dict(
+    "grid_export_limit": dict(name="Grid export limit", 
         address=0xA03F, min_value=0, max_value=15000, step=100, scale=1,
         unit_of_measurement=UNIT_WATT,
         # Output tops out at the lowest copy, and the vendor app reads this one.
         mirror=0x9ACE,
     ),
-    "output_voltage": dict(address=0xA029, min_value=200.0, max_value=250.0, step=1.0, **{k: v for k, v in _V.items() if k != "step"}),
-    "output_frequency": dict(
+    "output_voltage": dict(internal=True, name="Output voltage", address=0xA029, min_value=200.0, max_value=250.0, step=1.0, **{k: v for k, v in _V.items() if k != "step"}),
+    "output_frequency": dict(internal=True, name="Output frequency", 
         address=0xA02A, min_value=45.0, max_value=65.0, step=0.1, scale=0.01,
         unit_of_measurement=UNIT_HERTZ,
     ),
-    "max_charge_current": dict(address=0xA02F, min_value=0, max_value=100.0, **_A),
-    "pv_max_charge_current": dict(address=0xA030, min_value=0, max_value=100.0, **_A),
+    "max_charge_current": dict(name="Max charge current", address=0xA02F, min_value=0, max_value=100.0, **_A),
+    "pv_max_charge_current": dict(internal=True, name="Max charge current from PV", address=0xA030, min_value=0, max_value=100.0, **_A),
     # Reads 35.0 A where the app shows 50 A, so the mapping is unconfirmed.
-    "mains_max_charge_current": dict(address=0xA031, min_value=0, max_value=100.0, **_A),
-    "saturation_current": dict(address=0xA035, min_value=0, max_value=50.0, **_A),
-    "cv_voltage": dict(address=0xA08D, **_PACK_V),
-    "float_voltage": dict(address=0xA08E, **_PACK_V),
-    "cv_charge_time": dict(
+    "mains_max_charge_current": dict(internal=True, name="Max charge current from mains", address=0xA031, min_value=0, max_value=100.0, **_A),
+    "saturation_current": dict(internal=True, name="Saturation current", address=0xA035, min_value=0, max_value=50.0, **_A),
+    "cv_voltage": dict(internal=True, name="Constant voltage", address=0xA08D, **_PACK_V),
+    "float_voltage": dict(internal=True, name="Float voltage", address=0xA08E, **_PACK_V),
+    "cv_charge_time": dict(internal=True, name="Constant voltage time", 
         address=0xA090, min_value=0, max_value=600, step=5, scale=1,
         unit_of_measurement=UNIT_MINUTE,
     ),
-    "cv_return_voltage": dict(address=0xA091, **_PACK_V),
-    "battery_to_mains_voltage": dict(address=0xA092, **_PACK_V),
-    "mains_to_battery_voltage": dict(address=0xA093, **_PACK_V),
-    "undervoltage_alarm": dict(address=0xA094, **_PACK_V),
-    "low_voltage_shutdown": dict(address=0xA095, **_PACK_V),
-    "eod_voltage": dict(address=0xA096, **_PACK_V),
-    "shutdown_delay": dict(
+    "cv_return_voltage": dict(internal=True, name="Return to constant voltage", address=0xA091, **_PACK_V),
+    "battery_to_mains_voltage": dict(internal=True, name="Battery to mains voltage", address=0xA092, **_PACK_V),
+    "mains_to_battery_voltage": dict(internal=True, name="Mains to battery voltage", address=0xA093, **_PACK_V),
+    "undervoltage_alarm": dict(internal=True, name="Undervoltage alarm", address=0xA094, **_PACK_V),
+    "low_voltage_shutdown": dict(internal=True, name="Low voltage shutdown", address=0xA095, **_PACK_V),
+    "eod_voltage": dict(internal=True, name="End of discharge voltage", address=0xA096, **_PACK_V),
+    "shutdown_delay": dict(internal=True, name="Shutdown delay", 
         address=0xA097, min_value=0, max_value=300, step=1, scale=1,
         unit_of_measurement=UNIT_SECOND,
     ),
-    "eod_clear_voltage": dict(address=0xA098, **_PACK_V),
-    "soc_low_alarm": dict(address=0xA09B, **_PCT),
-    "soc_shutdown": dict(address=0xA09C, **_PCT),
-    "soc_full": dict(address=0xA09D, **_PCT),
-    "soc_inverter_to_mains": dict(address=0xA09E, **_PCT),
-    "soc_mains_to_inverter": dict(address=0xA09F, **_PCT),
+    "eod_clear_voltage": dict(internal=True, name="End of discharge clear voltage", address=0xA098, **_PACK_V),
+    "soc_low_alarm": dict(name="SOC low alarm", address=0xA09B, **_PCT),
+    "soc_shutdown": dict(name="SOC shutdown", address=0xA09C, **_PCT),
+    "soc_full": dict(name="SOC full", address=0xA09D, **_PCT),
+    "soc_inverter_to_mains": dict(name="SOC inverter to mains", address=0xA09E, **_PCT),
+    "soc_mains_to_inverter": dict(name="SOC mains to inverter", address=0xA09F, **_PCT),
 }
 
 # Some registers have no key on purpose - unconfirmed mappings and enums whose value
 # lists were never established. docs/REGISTERS.md says which and why.
 SWITCHES = {
-    "device_power": 0x9C40,
-    "eco_mode": 0xA02D,
-    "buzzer_mute": 0xA033,
-    "battery_activation": 0xA03E,
-    "mixing_priority": 0xA041,
-    "external_ct_host": 0xA047,
-    "anti_islanding": 0xA069,
-    "bms_function": 0xA099,
-    "independent_pack": 0xA0AF,
+    "device_power": dict(internal=True, address=0x9C40, name="Device power"),
+    "eco_mode": dict(address=0xA02D, name="Energy saving"),
+    "buzzer_mute": dict(address=0xA033, name="Buzzer mute"),
+    "battery_activation": dict(internal=True, address=0xA03E, name="Battery activation"),
+    "mixing_priority": dict(internal=True, address=0xA041, name="Mixing priority"),
+    "external_ct_host": dict(internal=True, address=0xA047, name="Grid reading from EMS host"),
+    "anti_islanding": dict(internal=True, address=0xA069, name="Anti-islanding"),
+    "bms_function": dict(internal=True, address=0xA099, name="BMS link"),
+    "independent_pack": dict(internal=True, address=0xA0AF, name="Independent pack"),
 }
 
 # Only where the value list is actually known.
 # Labels are the app's own, so the two agree when read side by side.
 SELECTS = {
-    "utility_range": dict(
+    "utility_range": dict(internal=True, name="Utility range", 
         address=0xA02B,
         options={0: "UPS mode", 1: "APL mode", 2: "GEN mode"},
     ),
-    "inverter_mode": dict(
+    "inverter_mode": dict(internal=True, name="Inverter operating mode", 
         address=0xA028,
         options={
             0: "Photovoltaic priority (PV)",
@@ -92,7 +92,7 @@ SELECTS = {
             3: "Hybrid Priority (HBD)",
         },
     ),
-    "battery_type": dict(
+    "battery_type": dict(internal=True, name="Battery type", 
         address=0xA08C,
         options={
             0: "Custom Type",
@@ -111,7 +111,7 @@ SELECTS = {
             13: "Ternary Lithium 14S",
         },
     ),
-    "parallel_mode": dict(
+    "parallel_mode": dict(internal=True, name="Parallel mode", 
         address=0xA02C,
         options={
             0: "Stand-alone",
@@ -124,7 +124,7 @@ SELECTS = {
             7: "Third phase of three phases",
         },
     ),
-    "bms_protocol": dict(
+    "bms_protocol": dict(internal=True, name="BMS protocol", 
         address=0xA09A,
         options={
             0: "Voltronic", 1: "Pylon", 2: "Aoguan", 3: "Oulite", 4: "Gotion",
@@ -133,7 +133,7 @@ SELECTS = {
             14: "Tentek", 15: "Rvtran", 16: "YUZE", 17: "EVT",
         },
     ),
-    "charge_priority": dict(
+    "charge_priority": dict(internal=True, name="Charge priority", 
         address=0xA02E,
         options={
             0: "Photovoltaic priority (OSO)",
@@ -142,7 +142,7 @@ SELECTS = {
             3: "PV only (NUC)",
         },
     ),
-    "grid_standard": dict(
+    "grid_standard": dict(internal=True, name="Grid standard", 
         address=0xA043,
         options={
             0: "GNL",
@@ -158,7 +158,7 @@ SELECTS = {
             10: "EN50549-PL (Poland)",
         },
     ),
-    "on_grid_mode": dict(
+    "on_grid_mode": dict(internal=True, name="Energy internet setting", 
         address=0xA034,
         options={
             0: "PV to load",

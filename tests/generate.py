@@ -60,6 +60,7 @@ uart:
 aecc:
   id: nova
   uart_id: bus_inverter
+  expose_all_settings: true
   backup:
     url: /aecc/backup
   work_mode_select: Work mode
@@ -136,6 +137,7 @@ uart:
 aecc:
   id: nova
   uart_id: bus_inverter
+  expose_all_settings: true
   datalogger:
     host: 192.0.2.10
   control:
@@ -153,7 +155,8 @@ def missing_keys(rendered):
         want += [f"{k}_sensor" for k in group]
     want += [f"{k}_number" for k in CONTROL_NUMBERS]
     want += ["mode_select", "work_mode_select", "host_text", "enable_switch",
-             "setpoint_number", "resting_power_number", "registers"]
+             "setpoint_number", "resting_power_number", "registers",
+             "expose_all_settings"]
     return [k for k in want if f"{k}:" not in rendered]
 
 

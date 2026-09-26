@@ -21,6 +21,7 @@ uart:
 aecc:
   id: nova
   uart_id: bus_inverter
+  expose_all_settings: true
   datalogger:
     host: 192.0.2.10
   control:

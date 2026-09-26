@@ -13,7 +13,9 @@ This component talks to the battery directly instead.
 
 - **Live readings** in Home Assistant with no configuration: state of charge, battery
   power, grid power, load
-- **Settings you can change**, including ones the app asks for a password
+- **Every setting the battery has**, including ones the app asks for a password
+- **A power setpoint**, so it replaces the vendor's integration rather than sitting
+  alongside it
 - **Zero-export control** — hold your grid connection at a target, for places where
   feeding in is not allowed
 - **A configuration backup** you can download and put back
@@ -81,8 +83,8 @@ aecc:
   uart_id: bus_inverter
 ```
 
-That is the whole configuration. It gives you the battery's readings, and its settings
-once you name the ones you want.
+That is the whole configuration. It gives you the battery's readings, every setting it
+has, and a setpoint to drive it with — enough to replace the vendor's own integration.
 
 ## 📊 What you get in Home Assistant
 
@@ -140,8 +142,8 @@ every key it accepts, so it is the exhaustive list if this one has drifted.
 
 ## ⚖️ Modes
 
-A `control:` block gives you a **Battery mode** dropdown in Home Assistant, and it
-remembers your choice across reboots:
+A **Battery mode** dropdown decides what the component does, and it remembers your choice
+across reboots:
 
 | Mode | What it does |
 |---|---|
@@ -151,7 +153,8 @@ remembers your choice across reboots:
 
 Off is the default, and it is genuinely off: the component stops reasserting the battery's
 own scheduler too, so it will not fight you while you drive the battery some other way.
-Zero export only appears in the list when you have given the component a `meter:`.
+Zero export only appears in the list once you have given the component a `meter:`; Manual
+is there from the start, driven by the **Battery power** setpoint.
 
 ### Handing the battery back
 
@@ -249,27 +252,43 @@ by the hour:
 
 ## 🧰 Battery settings
 
-Name a setting inside `aecc:` and it becomes a control in Home Assistant. That is the
-whole configuration — the register, the range, the step and the unit are already known:
+Every setting the battery has is already a control — the register, the range, the step and
+the unit are known, so nothing has to be listed.
+
+The ones you might change appear in Home Assistant under Configuration: the grid export
+limit, max charge current, energy saving, the buzzer, and the state-of-charge thresholds.
+The rest are commissioning settings — pack chemistry, grid nominals, BMS protocol — and
+stay off the dashboard. They still exist: YAML, automations and `aecc.write_register` all
+reach them.
+
+To put them all in Home Assistant:
+
+```yaml
+aecc:
+  expose_all_settings: true
+```
+
+Or move a single one either way with ESPHome's own `internal:`, which wins over that:
+
+```yaml
+aecc:
+  grid_standard_select:
+    internal: false     # this one on the dashboard
+  buzzer_mute_switch:
+    internal: true      # this one off it
+```
+
+Name one to change its label, or to override a default:
 
 ```yaml
 aecc:
   id: nova
   uart_id: bus_inverter
-  max_charge_current_number: Max charge current
-  soc_full_number: Full at
-  buzzer_mute_switch: Buzzer mute
-  on_grid_mode_select: On-grid mode
-```
-
-Any of those defaults can be replaced by writing the longer form instead of a name:
-
-```yaml
+  buzzer_mute_switch: Beeper
   soc_shutdown_number:
     name: Shut down at
     min_value: 5
     max_value: 50
-    interval: 5min
 ```
 
 The suffix says what kind of control you get: `_number` for a value, `_switch` for an

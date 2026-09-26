@@ -13,6 +13,7 @@ import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
     CONF_ID,
+    CONF_INTERNAL,
     CONF_INITIAL_VALUE,
     CONF_MAX_VALUE,
     CONF_MIN_VALUE,
@@ -93,6 +94,7 @@ CONF_SETPOINT = "setpoint"
 CONF_WORK_MODE_SELECT = "work_mode_select"
 CONF_HOST_TEXT = "host_text"
 CONF_BUTTON = "button"
+CONF_EXPOSE_ALL = "expose_all_settings"
 CONF_ENABLE_SWITCH = "enable_switch"
 CONF_MIRROR = "mirror"
 CONF_SIGNED = "signed"
@@ -192,7 +194,8 @@ def _number(spec):
             }
         )
         .extend(cv.COMPONENT_SCHEMA)
-        .add_extra(_fits_register)
+        .add_extra(_fits_register),
+        spec["name"],
     )
 
 
@@ -232,17 +235,18 @@ REGISTER_SCHEMA = (
 )
 
 
-def _switch(address):
+def _switch(spec):
     return _named(
         switch.switch_schema(AeccSwitch, entity_category=ENTITY_CATEGORY_CONFIG,
                              default_restore_mode="DISABLED")
         .extend(
             {
-                cv.Optional(CONF_ADDRESS, default=address): cv.hex_uint16_t,
+                cv.Optional(CONF_ADDRESS, default=spec["address"]): cv.hex_uint16_t,
                 cv.Optional(CONF_INTERVAL, default="30s"): cv.positive_time_period_milliseconds,
             }
         )
-        .extend(cv.COMPONENT_SCHEMA)
+        .extend(cv.COMPONENT_SCHEMA),
+        spec["name"],
     )
 
 
@@ -259,17 +263,22 @@ def _select(spec):
     )
 
 CONTROL_NUMBERS = {
-    CONF_GRID_TARGET: (_control_number(0, 3000, 10, UNIT_WATT), "GRID_TARGET"),
-    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_DISCHARGE"),
-    CONF_MAX_CHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_CHARGE"),
-    CONF_MIN_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MIN_SOC"),
-    CONF_MAX_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MAX_SOC"),
+    CONF_GRID_TARGET: (_control_number(0, 3000, 10, UNIT_WATT), "GRID_TARGET", "Grid target"),
+    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_DISCHARGE", "Max discharge"),
+    CONF_MAX_CHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_CHARGE", "Max charge"),
+    CONF_MIN_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MIN_SOC", "Reserve"),
+    CONF_MAX_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MAX_SOC", "Charge ceiling"),
 }
 RESTING_POWER_NUMBER = _control_number(-2000, -1, 10, UNIT_WATT)
 
 
-def _suffixed(mapping, suffix):
-    return {cv.Optional(f"{key}_{suffix}"): schema for key, schema in mapping.items()}
+def _suffixed(specs, suffix, build):
+    """Every battery setting, created by default: this replaces the vendor integration,
+    so its controls have to be there without being listed."""
+    return {
+        cv.Optional(f"{key}_{suffix}", default=spec["name"]): build(spec)
+        for key, spec in specs.items()
+    }
 
 
 METER_SCHEMA = cv.typed_schema(
@@ -367,9 +376,13 @@ CONTROL_SCHEMA = cv.Schema(
         cv.Optional(CONF_MODE_SELECT, default="Battery mode"): _named(
             select.select_schema(ControlModeSelect).extend(cv.COMPONENT_SCHEMA)
         ),
-        cv.Optional(f"{CONF_SETPOINT}_number"): _control_number(-2500, 2500, 50, UNIT_WATT),
+        cv.Optional(f"{CONF_SETPOINT}_number", default="Battery power"):
+            _control_number(-2500, 2500, 50, UNIT_WATT),
     }
-).extend(_suffixed({k: v[0] for k, v in CONTROL_NUMBERS.items()}, "number"))
+).extend({
+    cv.Optional(f"{key}_number", default=spec[2]): spec[0]
+    for key, spec in CONTROL_NUMBERS.items()
+})
 
 
 def _in_number_range(conf, key, number_key, path):
@@ -385,7 +398,24 @@ def _in_number_range(conf, key, number_key, path):
         )
 
 
+def _hide_commissioning(config):
+    """Settings nobody changes twice stay out of Home Assistant unless asked for.
+
+    Applied here rather than as a schema default so that `internal:` written on one
+    setting still wins over the blanket option.
+    """
+    expose = config[CONF_EXPOSE_ALL]
+    for specs, suffix in ((NUMBERS, "number"), (SWITCHES, "switch"), (SELECTS, "select")):
+        for key, spec in specs.items():
+            entry = config.get(f"{key}_{suffix}")
+            if entry is None or CONF_INTERNAL in entry:
+                continue
+            entry[CONF_INTERNAL] = False if expose else spec.get("internal", False)
+    return config
+
+
 def _validate(config):
+    _hide_commissioning(config)
 
     if CONF_DATALOGGER in config:
         _in_number_range(config[CONF_DATALOGGER], CONF_RESTING_POWER,
@@ -420,7 +450,8 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
             cv.Optional(CONF_UNIT, default=1): cv.int_range(min=0, max=255),
             cv.Optional(CONF_METER): METER_SCHEMA,
-            cv.Optional(CONF_CONTROL): _block(CONTROL_SCHEMA),
+            # Always: the setpoint is the control this replaces the vendor integration for.
+            cv.Optional(CONF_CONTROL, default={}): _block(CONTROL_SCHEMA),
             # Serving the backup over HTTP needs a web server; without it the button
             # still works and the result is fetched some other way.
             cv.Optional(CONF_BACKUP): _block(BACKUP_SCHEMA),
@@ -428,6 +459,8 @@ CONFIG_SCHEMA = cv.All(
             # schedule slot has to be set by hand and nothing keeps it there.
             cv.Optional(CONF_DATALOGGER): _block(DATALOGGER_SCHEMA),
             cv.Optional(CONF_REGISTERS, default=[]): cv.ensure_list(REGISTER_SCHEMA),
+            # Commissioning settings are hidden from Home Assistant by default.
+            cv.Optional(CONF_EXPOSE_ALL, default=False): cv.boolean,
             # The battery's own scheduler mode, which is not on Modbus. Created with the
             # datalogger, because without it Off parks the battery with no way back.
             cv.Optional(CONF_WORK_MODE_SELECT, default="Work mode"): _named(
@@ -435,9 +468,9 @@ CONFIG_SCHEMA = cv.All(
             ),
         }
     )
-    .extend(_suffixed({k: _number(v) for k, v in NUMBERS.items()}, "number"))
-    .extend(_suffixed({k: _switch(v) for k, v in SWITCHES.items()}, "switch"))
-    .extend(_suffixed({k: _select(v) for k, v in SELECTS.items()}, "select"))
+    .extend(_suffixed(NUMBERS, "number", _number))
+    .extend(_suffixed(SWITCHES, "switch", _switch))
+    .extend(_suffixed(SELECTS, "select", _select))
     .extend(_telemetry_schema())
     .extend(cv.COMPONENT_SCHEMA),
     cv.only_on_esp32,
@@ -627,7 +660,7 @@ async def to_code(config):
         setpoint = conf.get(f"{CONF_SETPOINT}_number")
         if setpoint is not None:
             await _control_number_to_code(var, setpoint, "MANUAL_SETPOINT", 0)
-        for key, (_, param) in CONTROL_NUMBERS.items():
+        for key, (_, param, _name) in CONTROL_NUMBERS.items():
             entry = conf.get(f"{key}_number")
             if entry is not None:
                 await _control_number_to_code(var, entry, param, conf[key])

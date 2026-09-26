@@ -597,6 +597,10 @@ void AeccComponent::bus_task_() {
       ESP_LOGI(TAG, "datalogger host is now '%s'", wanted_host.c_str());
       this->dl_.set_host(wanted_host);
       this->ems_ready_ = false;
+      // Read the new address now rather than at the end of the interval, so typing one
+      // in shows whether it works.
+      this->observed_at_ = millis() - this->reconcile_ms_;
+      this->reconciled_at_ = millis() - this->reconcile_ms_;
     }
 
     if (this->dl_.configured()) {

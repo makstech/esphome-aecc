@@ -105,7 +105,6 @@ class AeccComponent : public Component
   void request_work_mode(WorkMode mode);
   /// Queued the same way: the bus task owns the host string.
   void request_datalogger_host(const std::string &host);
-  bool datalogger_present() const { return this->dl_.present(); }
   bool ports_ok() const { return this->ports_ok_; }
 
 #ifdef AECC_OTA_AWARE
