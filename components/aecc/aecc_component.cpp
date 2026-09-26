@@ -63,6 +63,13 @@ bool AeccComponent::work_mode(WorkMode *out) {
   return valid;
 }
 
+void AeccComponent::request_datalogger_host(const std::string &host) {
+  this->lock_();
+  this->wanted_host_ = host;
+  this->host_pending_ = true;
+  this->unlock_();
+}
+
 void AeccComponent::request_work_mode(WorkMode mode) {
   this->lock_();
   this->wanted_work_mode_ = mode;
@@ -510,7 +517,7 @@ void AeccComponent::bus_task_() {
 #endif
     // The control loop is real time; polling and writes fill the gaps between ticks.
     if (this->control_ != nullptr && this->ports_ok_ &&
-        (!this->dl_.configured() || this->ems_ready_ || !this->commanding_())) {
+        (!this->dl_.present() || this->ems_ready_ || !this->commanding_())) {
       const uint32_t now = millis();
       if ((int32_t) (now - this->next_tick_) >= 0 &&
           this->ticks_since_housekeeping_ < TICKS_BEFORE_HOUSEKEEPING) {
@@ -575,6 +582,20 @@ void AeccComponent::bus_task_() {
     if (!commanding && this->was_commanding_) {
       this->was_commanding_ = false;
       // Whatever the EMS holds now is no longer this component's doing.
+      this->ems_ready_ = false;
+    }
+
+    this->lock_();
+    const bool host_pending = this->host_pending_;
+    std::string wanted_host;
+    if (host_pending) {
+      wanted_host = this->wanted_host_;
+      this->host_pending_ = false;
+    }
+    this->unlock_();
+    if (host_pending) {
+      ESP_LOGI(TAG, "datalogger host is now '%s'", wanted_host.c_str());
+      this->dl_.set_host(wanted_host);
       this->ems_ready_ = false;
     }
 

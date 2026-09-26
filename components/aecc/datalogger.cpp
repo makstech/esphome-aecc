@@ -1,6 +1,7 @@
 #include "datalogger.h"
 
 #include <algorithm>
+#include <cmath>
 #include "esphome/components/json/json_util.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -9,6 +10,13 @@
 #include <cstring>
 
 #include <arpa/inet.h>
+#include <netdb.h>
+#ifdef USE_ESP32
+#include <esp_task_wdt.h>
+#endif
+#ifdef USE_MDNS
+#include <mdns.h>
+#endif
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -24,6 +32,12 @@ static const char *const TAG = "aecc.datalogger";
 // unreachable datalogger, or one whose single client slot is held by something else,
 // must degrade to a failed call rather than a reboot.
 static const uint32_t CONNECT_MS = 1200;
+// mDNS answers on the local segment or not at all, so a short window is enough and keeps
+// the lookup well inside the task watchdog.
+static const uint32_t MDNS_MS = 1500;
+// Long enough that a working address is not re-looked-up, short enough that a battery
+// which moved on DHCP is found again without a reboot.
+static const uint32_t RESOLVE_TTL_MS = 300000;
 static const uint32_t RECV_MS = 1200;
 static const uint32_t TOTAL_MS = 3000;
 
@@ -32,6 +46,70 @@ std::string Datalogger::slot(int32_t watts, uint8_t max_soc, uint8_t min_soc) {
   snprintf(buf, sizeof(buf), "1,00:00,23:59,%d,0,6,0,0,0,%u,%u", (int) watts, (unsigned) max_soc,
            (unsigned) min_soc);
   return buf;
+}
+
+bool Datalogger::resolve_(uint32_t *addr) {
+  struct in_addr literal {};
+  if (::inet_pton(AF_INET, this->host_.c_str(), &literal) == 1) {
+    *addr = literal.s_addr;
+    return true;
+  }
+
+  if (this->resolved_ != 0 && millis() - this->resolved_at_ < RESOLVE_TTL_MS) {
+    *addr = this->resolved_;
+    return true;
+  }
+
+  const std::string suffix = ".local";
+  const bool is_mdns = this->host_.size() > suffix.size() &&
+                       this->host_.compare(this->host_.size() - suffix.size(), suffix.size(), suffix) == 0;
+
+#ifdef USE_MDNS
+  if (is_mdns) {
+    // Not getaddrinfo: this one takes an explicit timeout, and a name lookup on the bus
+    // task has to be bounded.
+    const std::string label = this->host_.substr(0, this->host_.size() - suffix.size());
+    esp_ip4_addr_t found {};
+    if (::mdns_query_a(label.c_str(), MDNS_MS, &found) == ESP_OK) {
+      this->resolved_ = found.addr;
+      this->resolved_at_ = millis();
+      *addr = found.addr;
+      ESP_LOGI(TAG, "%s is " IPSTR, this->host_.c_str(), IP2STR(&found));
+      return true;
+    }
+    ESP_LOGW(TAG, "mDNS did not answer for %s", this->host_.c_str());
+    return false;
+  }
+#endif
+
+  if (!is_mdns) {
+    struct addrinfo hints {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = nullptr;
+    // lwIP's resolver blocks with no caller-side timeout, and its retry ladder runs to
+    // roughly seven seconds per configured DNS server - past the task watchdog on the
+    // first unanswered lookup. Step off it for the duration rather than reboot: a
+    // controller that stops writing reverts to the resting slot, which is the safe state.
+#ifdef USE_ESP32
+    esp_task_wdt_delete(nullptr);
+#endif
+    const int rc = ::getaddrinfo(this->host_.c_str(), nullptr, &hints, &res);
+#ifdef USE_ESP32
+    esp_task_wdt_add(nullptr);
+#endif
+    if (rc == 0 && res != nullptr) {
+      const uint32_t found = ((struct sockaddr_in *) res->ai_addr)->sin_addr.s_addr;
+      ::freeaddrinfo(res);
+      this->resolved_ = found;
+      this->resolved_at_ = millis();
+      *addr = found;
+      return true;
+    }
+  }
+
+  ESP_LOGW(TAG, "could not resolve %s", this->host_.c_str());
+  return false;
 }
 
 bool Datalogger::call_(const std::string &request, std::string &reply) {
@@ -47,11 +125,12 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
   struct sockaddr_in addr {};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(this->port_);
-  if (::inet_pton(AF_INET, this->host_.c_str(), &addr.sin_addr) != 1) {
+  uint32_t resolved = 0;
+  if (!this->resolve_(&resolved)) {
     ::close(fd);
-    ESP_LOGW(TAG, "%s is not an IPv4 address", this->host_.c_str());
     return false;
   }
+  addr.sin_addr.s_addr = resolved;
 
   if (::connect(fd, (struct sockaddr *) &addr, sizeof(addr)) != 0 && errno != EINPROGRESS) {
     ::close(fd);
@@ -67,12 +146,17 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
     ::close(fd);
     ESP_LOGW(TAG, "%s:%u did not accept a connection within %u ms", this->host_.c_str(),
              this->port_, (unsigned) CONNECT_MS);
+    this->resolved_ = 0;
     return false;
   }
   int err = 0;
   socklen_t len = sizeof(err);
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) != 0 || err != 0) {
     ::close(fd);
+    // Distinct from the timeout above: a refusal means something answered, so the
+    // address is right and the port or the host is wrong.
+    ESP_LOGW(TAG, "%s:%u refused the connection (errno %d)", this->host_.c_str(),
+             this->port_, err);
     return false;
   }
 

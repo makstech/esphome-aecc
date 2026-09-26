@@ -1,13 +1,13 @@
-#include "aecc_sensor.h"
+#include "readings.h"
+
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
-
-#include <cmath>
 
 namespace esphome {
 namespace aecc {
 
 static const char *const TAG = "aecc.sensor";
+static const char *const BS_TAG = "aecc.binary_sensor";
 
 void AeccSensor::setup() {
   if (this->parent_ == nullptr) {
@@ -81,6 +81,42 @@ void AeccSensor::dump_config() {
   LOG_SENSOR("", "AECC sensor", this);
   ESP_LOGCONFIG(TAG, "  Register: 0x%04X", this->address_);
 }
+
+
+void AeccBinarySensor::setup() {
+  if (this->health_ == Health::EMS_READY) {
+    if (this->parent_ == nullptr || !this->parent_->datalogger_present()) {
+      ESP_LOGE(BS_TAG, "ems_ready needs a datalogger to be configured");
+      this->mark_failed();
+    }
+    return;
+  }
+  if (this->parent_ == nullptr || this->parent_->control() == nullptr) {
+    ESP_LOGE(BS_TAG, "needs control: to be configured");
+    this->mark_failed();
+  }
+}
+
+void AeccBinarySensor::loop() {
+  if (this->health_ == Health::EMS_READY) {
+    this->publish_state(this->parent_->ems_ready());
+    return;
+  }
+  auto *c = this->parent_->control();
+  switch (this->health_) {
+    case Health::CONTROL_EFFECTIVE:
+      this->publish_state(c->effective());
+      break;
+    case Health::METER_OK:
+      this->publish_state(c->meter_ok());
+      break;
+    case Health::EMS_READY:
+      this->publish_state(this->parent_->ems_ready());
+      break;
+  }
+}
+
+void AeccBinarySensor::dump_config() { LOG_BINARY_SENSOR("", "AECC health", this); }
 
 }  // namespace aecc
 }  // namespace esphome

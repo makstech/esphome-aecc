@@ -2,7 +2,12 @@ import logging
 
 import esphome.codegen as cg
 from esphome import automation
-from esphome.components import number, select, switch, uart, web_server_base
+from esphome.components import button, number, select, switch, text, uart, web_server_base
+
+# Aliased: aecc has a sensor/ sub-platform, and importing it rebinds the same name on this
+# package, shadowing the global by the time to_code runs.
+from esphome.components import binary_sensor as bs_platform
+from esphome.components import sensor as sensor_platform
 from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 import esphome.config_validation as cv
 from esphome.const import (
@@ -18,18 +23,20 @@ from esphome.const import (
     CONF_UART_ID,
     CONF_VALUE,
     ENTITY_CATEGORY_CONFIG,
+    ENTITY_CATEGORY_DIAGNOSTIC,
     UNIT_PERCENT,
     UNIT_WATT,
 )
 
 from .settings import NUMBERS, SELECTS, SWITCHES
+from .telemetry import DIAGNOSTICS, HEALTH, PRESETS
 
 _LOGGER = logging.getLogger(__name__)
 
 CODEOWNERS = ["@makstech"]
 DEPENDENCIES = ["uart"]
 # datalogger.cpp parses the unit's JSON API.
-AUTO_LOAD = ["json", "number", "select", "switch"]
+AUTO_LOAD = ["binary_sensor", "button", "json", "number", "select", "sensor", "switch", "text"]
 
 aecc_ns = cg.esphome_ns.namespace("aecc")
 AeccComponent = aecc_ns.class_("AeccComponent", cg.Component)
@@ -45,6 +52,13 @@ ControlModeSelect = aecc_ns.class_("ControlModeSelect", select.Select, cg.Compon
 ControlMode = aecc_ns.enum("ControlMode", is_class=True)
 WorkModeSelect = aecc_ns.class_("WorkModeSelect", select.Select, cg.Component)
 WorkMode = aecc_ns.enum("WorkMode", is_class=True)
+DataloggerHostText = aecc_ns.class_("DataloggerHostText", text.Text, cg.Component)
+DataloggerSwitch = aecc_ns.class_("DataloggerSwitch", switch.Switch, cg.Component)
+AeccSensor = aecc_ns.class_("AeccSensor", sensor_platform.Sensor, cg.Component)
+Metric = aecc_ns.enum("Metric", is_class=True)
+AeccBinarySensor = aecc_ns.class_("AeccBinarySensor", bs_platform.BinarySensor, cg.Component)
+Health = aecc_ns.enum("Health", is_class=True)
+AeccBackupButton = aecc_ns.class_("AeccBackupButton", button.Button, cg.Component)
 ControlParam = aecc_ns.enum("ControlParam", is_class=True)
 RestoreHandler = aecc_ns.class_("RestoreHandler", cg.Component)
 
@@ -77,17 +91,63 @@ CONF_RESTORE_URL = "restore_url"
 CONF_MODE_SELECT = "mode_select"
 CONF_SETPOINT = "setpoint"
 CONF_WORK_MODE_SELECT = "work_mode_select"
+CONF_HOST_TEXT = "host_text"
+CONF_BUTTON = "button"
+CONF_ENABLE_SWITCH = "enable_switch"
 CONF_MIRROR = "mirror"
 CONF_SIGNED = "signed"
 
 
-def _named(schema):
+def _named(schema, default_name=None):
     """A bare string is the entity's name; a mapping is the full schema."""
 
     def validate(value):
-        return schema(value if isinstance(value, dict) else {CONF_NAME: value})
+        if not isinstance(value, dict):
+            return schema({CONF_NAME: value})
+        if default_name is not None and CONF_NAME not in value and CONF_ID not in value:
+            value = {CONF_NAME: default_name, **value}
+        return schema(value)
 
     return validate
+
+
+def _sensor(spec):
+    """A reading. Created by default, so naming it only changes the label."""
+    fields = {k: v for k, v in spec.items()
+              if k not in ("address", "signed", "metric", "needs", "name", "interval")}
+    return _named(
+        sensor_platform.sensor_schema(AeccSensor, **fields)
+        .extend({cv.Optional(CONF_INTERVAL, default=spec.get("interval", "10s")):
+                cv.positive_time_period_milliseconds})
+        .extend(cv.COMPONENT_SCHEMA),
+        spec["name"],
+    )
+
+
+def _binary_sensor(spec):
+    return _named(
+        bs_platform.binary_sensor_schema(
+            AeccBinarySensor, entity_category=ENTITY_CATEGORY_DIAGNOSTIC
+        ).extend(cv.COMPONENT_SCHEMA),
+        spec["name"],
+    )
+
+
+def _reports(config, spec):
+    """Whether everything a reading depends on is configured."""
+    keys = {"meter": CONF_METER, "control": CONF_CONTROL, "datalogger": CONF_DATALOGGER}
+    return all(keys[n] in config for n in spec.get("needs") or ())
+
+
+def _telemetry_schema():
+    out = {}
+    for key, spec in PRESETS.items():
+        out[cv.Optional(f"{key}_sensor", default=spec["name"])] = _sensor(spec)
+    for key, spec in DIAGNOSTICS.items():
+        out[cv.Optional(f"{key}_sensor", default=spec["name"])] = _sensor(spec)
+    for key, spec in HEALTH.items():
+        out[cv.Optional(f"{key}_sensor", default=spec["name"])] = _binary_sensor(spec)
+    return out
 
 
 def _fits_register(conf):
@@ -225,13 +285,25 @@ METER_SCHEMA = cv.typed_schema(
 
 DATALOGGER_SCHEMA = cv.Schema(
     {
-        cv.Required(CONF_HOST): cv.ipv4address,
+        # An address, a hostname, or an mDNS name; resolved on the device.
+        # Bounded by what the host text entity can store.
+        cv.Required(CONF_HOST): cv.All(cv.string_strict, cv.Length(max=63)),
         cv.Optional(CONF_PORT, default=8080): cv.port,
         # Negative charges. This is the state a dead controller leaves the unit in, and
         # charging cannot export at any load or state of charge.
         cv.Optional(CONF_RESTING_POWER, default=-300): cv.int_range(min=-20000, max=-1),
         cv.Optional(CONF_RECONCILE_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_RESTING_POWER}_number"): RESTING_POWER_NUMBER,
+        # Changing the address without reflashing, for a battery that moves on DHCP.
+        cv.Optional(CONF_HOST_TEXT, default="Datalogger address"): _named(
+            text.text_schema(DataloggerHostText, mode="TEXT").extend(cv.COMPONENT_SCHEMA),
+            "Datalogger address",
+        ),
+        cv.Optional(CONF_ENABLE_SWITCH, default="Datalogger"): _named(
+            switch.switch_schema(DataloggerSwitch, default_restore_mode="RESTORE_DEFAULT_ON")
+            .extend(cv.COMPONENT_SCHEMA),
+            "Datalogger",
+        ),
     }
 )
 
@@ -243,6 +315,10 @@ BACKUP_SCHEMA = cv.All(
             cv.GenerateID(CONF_RESTORE_ID): cv.declare_id(RestoreHandler),
             cv.Optional(CONF_URL, default="/aecc/backup"): cv.string_strict,
             cv.Optional(CONF_RESTORE_URL, default="/aecc/restore"): cv.string_strict,
+            cv.Optional(CONF_BUTTON, default="Back up configuration"): _named(
+                button.button_schema(AeccBackupButton, entity_category=ENTITY_CATEGORY_CONFIG)
+                .extend(cv.COMPONENT_SCHEMA)
+            ),
         }
     ),
     cv.requires_component("web_server"),
@@ -352,6 +428,7 @@ CONFIG_SCHEMA = cv.All(
     .extend(_suffixed({k: _number(v) for k, v in NUMBERS.items()}, "number"))
     .extend(_suffixed({k: _switch(v) for k, v in SWITCHES.items()}, "switch"))
     .extend(_suffixed({k: _select(v) for k, v in SELECTS.items()}, "select"))
+    .extend(_telemetry_schema())
     .extend(cv.COMPONENT_SCHEMA),
     cv.only_on_esp32,
     _validate,
@@ -389,6 +466,41 @@ async def _control_number_to_code(parent, conf, param, fallback):
     cg.add(var.set_initial_value(conf.get(CONF_INITIAL_VALUE, fallback)))
     cg.add(var.set_restore_value(conf[CONF_RESTORE_VALUE]))
     return var
+
+
+async def _register_telemetry(parent, config):
+    for key, spec in PRESETS.items():
+        conf = config.get(f"{key}_sensor")
+        if conf is None:
+            continue
+        var = await sensor_platform.new_sensor(conf)
+        await cg.register_component(var, conf)
+        cg.add(var.set_parent(parent))
+        cg.add(var.set_address(spec["address"]))
+        cg.add(var.set_signed(spec["signed"]))
+        cg.add(var.set_scale(1.0))
+        cg.add(var.set_interval(conf[CONF_INTERVAL]))
+
+    for key, spec in DIAGNOSTICS.items():
+        conf = config.get(f"{key}_sensor")
+        # Silently absent rather than an error: these are created by default, so a config
+        # without a meter should simply not get the meter's readings.
+        if conf is None or not _reports(config, spec):
+            continue
+        var = await sensor_platform.new_sensor(conf)
+        await cg.register_component(var, conf)
+        cg.add(var.set_parent(parent))
+        cg.add(var.set_metric(getattr(Metric, spec["metric"])))
+        cg.add(var.set_interval(conf[CONF_INTERVAL]))
+
+    for key, spec in HEALTH.items():
+        conf = config.get(f"{key}_sensor")
+        if conf is None or not _reports(config, spec):
+            continue
+        var = await bs_platform.new_binary_sensor(conf)
+        await cg.register_component(var, conf)
+        cg.add(var.set_parent(parent))
+        cg.add(var.set_health(getattr(Health, spec["metric"])))
 
 
 async def _register_entities(parent, config):
@@ -445,6 +557,17 @@ async def to_code(config):
         cg.add(var.set_datalogger_port(conf[CONF_PORT]))
         cg.add(var.set_resting_power(conf[CONF_RESTING_POWER]))
         cg.add(var.set_reconcile_interval(conf[CONF_RECONCILE_INTERVAL]))
+        entry = conf.get(CONF_HOST_TEXT)
+        if entry is not None:
+            host_text = await text.new_text(entry)
+            await cg.register_component(host_text, entry)
+            cg.add(host_text.set_parent(var))
+            cg.add(host_text.set_default_host(str(conf[CONF_HOST])))
+        entry = conf.get(CONF_ENABLE_SWITCH)
+        if entry is not None:
+            dl_switch = await switch.new_switch(entry)
+            await cg.register_component(dl_switch, entry)
+            cg.add(dl_switch.set_parent(var))
         if f"{CONF_RESTING_POWER}_number" in conf:
             await _control_number_to_code(
                 var, conf[f"{CONF_RESTING_POWER}_number"], "RESTING_POWER",
@@ -512,7 +635,12 @@ async def to_code(config):
         cg.add(restore.set_parent(var))
         cg.add(restore.set_url(conf[CONF_RESTORE_URL]))
 
+        backup_button = await button.new_button(conf[CONF_BUTTON])
+        await cg.register_component(backup_button, conf[CONF_BUTTON])
+        cg.add(backup_button.set_parent(var))
+
     await _register_entities(var, config)
+    await _register_telemetry(var, config)
 
 
 @automation.register_action(

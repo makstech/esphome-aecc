@@ -1,4 +1,6 @@
 #include "entities.h"
+
+#include <cstring>
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
@@ -190,10 +192,65 @@ void ControlModeSelect::control(const std::string &value) {
 
 void ControlModeSelect::dump_config() { LOG_SELECT("", "AECC control mode", this); }
 
+// --- datalogger host --------------------------------------------------------
+
+/// Preferences store fixed-size blobs, so the name rides in a padded buffer.
+struct HostBlob {
+  char value[64];
+};
+
+void DataloggerHostText::setup() {
+  if (this->parent_ == nullptr) {
+    this->mark_failed();
+    return;
+  }
+  std::string host = this->default_;
+  this->pref_ = this->make_entity_preference<HostBlob>();
+  HostBlob stored {};
+  if (this->pref_.load(&stored)) {
+    stored.value[sizeof(stored.value) - 1] = '\0';
+    if (stored.value[0] != '\0')
+      host = stored.value;
+  }
+  this->control(host);
+}
+
+void DataloggerHostText::control(const std::string &value) {
+  if (value.size() >= sizeof(HostBlob::value)) {
+    ESP_LOGW(TAG, "'%s' is too long for a host name", value.c_str());
+    return;
+  }
+  HostBlob blob {};
+  std::strncpy(blob.value, value.c_str(), sizeof(blob.value) - 1);
+  this->pref_.save(&blob);
+  this->parent_->request_datalogger_host(value);
+  this->publish_state(value);
+}
+
+void DataloggerHostText::dump_config() { LOG_TEXT("", "AECC datalogger host", this); }
+
+// --- datalogger enable ------------------------------------------------------
+
+void DataloggerSwitch::setup() {
+  if (this->parent_ == nullptr) {
+    this->mark_failed();
+    return;
+  }
+  const auto restored = this->get_initial_state_with_restore_mode();
+  this->write_state(restored.value_or(true));
+}
+
+void DataloggerSwitch::write_state(bool state) {
+  this->parent_->datalogger()->set_enabled(state);
+  this->publish_state(state);
+}
+
+void DataloggerSwitch::dump_config() { LOG_SWITCH("", "AECC datalogger", this); }
+
 // --- work mode --------------------------------------------------------------
 
 void WorkModeSelect::setup() {
-  if (this->parent_ == nullptr || !this->parent_->datalogger_configured()) {
+  if (this->parent_ == nullptr || !this->parent_->datalogger_present()) {
     ESP_LOGE(TAG, "work_mode_select needs a datalogger");
     this->mark_failed();
     return;

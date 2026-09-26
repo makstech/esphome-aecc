@@ -27,9 +27,20 @@ enum class WorkMode : uint8_t {
 /// identical to that starvation.
 class Datalogger {
  public:
-  void set_host(const std::string &host) { this->host_ = host; }
+  /// An address, a hostname, or an mDNS name. Changing it drops the cached address.
+  void set_host(const std::string &host) {
+    if (host == this->host_)
+      return;
+    this->host_ = host;
+    this->resolved_ = 0;
+    this->resolved_at_ = 0;
+  }
   void set_port(uint16_t port) { this->port_ = port; }
-  bool configured() const { return !this->host_.empty(); }
+  void set_enabled(bool enabled) { this->enabled_ = enabled; }
+  /// A datalogger exists in the configuration. Separate from configured(), because
+  /// switching it off must not read as "this unit has no scheduler to reconcile".
+  bool present() const { return !this->host_.empty(); }
+  bool configured() const { return this->enabled_ && this->present(); }
   bool reachable() const { return this->reachable_; }
 
   bool read(const std::vector<uint16_t> &addrs, std::map<uint16_t, std::string> &out);
@@ -43,11 +54,18 @@ class Datalogger {
   /// Reconnects per call: holding the socket would lock everything else out of the single
   /// client slot, and per-call connection was measured to work for writes as well as reads.
   bool call_(const std::string &request, std::string &reply);
+  /// The host as an IPv4 address, resolving it if it is a name. Cached, because every
+  /// call would otherwise pay for a lookup, and re-resolved only after a failure so a
+  /// battery that moves on DHCP is still found.
+  bool resolve_(uint32_t *addr);
 
   std::string host_;
   uint16_t port_{8080};
   uint32_t serial_{0};
   bool reachable_{false};
+  volatile bool enabled_{true};
+  uint32_t resolved_{0};
+  uint32_t resolved_at_{0};
 };
 
 }  // namespace aecc

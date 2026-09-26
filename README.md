@@ -11,7 +11,8 @@ This component talks to the battery directly instead.
 
 ## ✨ What you get
 
-- **Live readings** in Home Assistant: state of charge, battery power, grid power, load
+- **Live readings** in Home Assistant with no configuration: state of charge, battery
+  power, grid power, load
 - **Settings you can change**, including ones the app asks for a password
 - **Zero-export control** — hold your grid connection at a target, for places where
   feeding in is not allowed
@@ -78,51 +79,61 @@ uart:
 aecc:
   id: nova
   uart_id: bus_inverter
-
-sensor:
-  - platform: aecc
 ```
 
-That gives you state of charge, battery power, grid power and backup load. Name any
-sensor yourself and you get only the ones you name.
+That is the whole configuration. It gives you the battery's readings, and its settings
+once you name the ones you want.
 
-## 📊 What you can put in Home Assistant
+## 📊 What you get in Home Assistant
 
-**Readings** — `sensor:`
+These appear on their own. A reading is created when the thing it describes is
+configured, so a setup without a meter has no meter readings.
 
-| Key | What it is |
+**Readings**
+
+| Name | What it is |
 |---|---|
-| `soc` | State of charge, % |
-| `battery_power` | Positive when discharging |
-| `grid_power` | At the battery's own connection, positive when exporting |
-| `backup_load` | Load on the battery's own socket |
-| `setpoint` | What the battery has been told to do |
-| `losses` | Standby and conversion losses |
+| Battery SOC | State of charge, % |
+| Battery power | Positive when discharging |
+| Grid power | At the battery's own connection, positive when exporting |
+| Backup load | Load on the battery's own socket |
+| Setpoint | What the battery has been told to do |
+| Losses | Standby and conversion losses |
 
-**Control diagnostics** — `sensor:`, with `control:`; the meter ones also need `meter:`
+**Control diagnostics** — with `control:`, and the meter ones also with `meter:`
 
-| Key | What it is |
+| Name | What it is |
 |---|---|
-| `meter_power` | What your meter is reading right now |
-| `meter_power_filtered` | The same after smoothing, which is what the loop acts on |
-| `commanded_power` | What the loop is asking the battery for |
-| `meter_age` | Seconds since the last good meter reading |
-| `loop_rate` | How often the loop is actually running, Hz |
+| Meter grid power | What your meter is reading right now |
+| Meter grid power, filtered | The same after smoothing, which is what the loop acts on |
+| Commanded power | What the loop is asking the battery for |
+| Meter sample age | Seconds since the last good meter reading |
+| Control loop rate | How often the loop is actually running, Hz |
 
-**Battery settings** — under `aecc:`, see [below](#-battery-settings)
+**Health**
 
-**Health** — `binary_sensor:`
-
-| Key | On means | Needs |
+| Name | On means | Needs |
 |---|---|---|
-| `control_effective` | The battery is obeying the setpoint | `control:` |
-| `meter_ok` | The meter is answering with fresh readings | `control:` + `meter:` |
-| `ems_ready` | The battery's scheduler is set up for local control | `control:` + `datalogger:` |
+| Setpoint honoured | The battery is obeying the setpoint | `control:` |
+| Meter OK | The meter is answering with fresh readings | `control:` + `meter:` |
+| Scheduler ready | The battery's scheduler is set up for local control | `control:` + `datalogger:` |
 
-`control_effective` and `meter_ok` both go off while the mode is Off.
+Setpoint honoured and Meter OK both go off while the mode is Off.
 
-**Other** — a `button:` to take a backup, and the `aecc.write_register` action to write
-any address.
+To rename one, name it under `aecc:` with a `_sensor` suffix:
+
+```yaml
+aecc:
+  soc_sensor: Charge level
+  meter_age_sensor:
+    name: Meter age
+    interval: 30s
+```
+
+**Battery settings** — also under `aecc:`, see [below](#-battery-settings)
+
+**Other** — a **Back up configuration** button appears with `backup:`, and the
+`aecc.write_register` action writes any address.
 
 ## ⚖️ Modes
 
@@ -294,7 +305,7 @@ Give it a `name:` for it to appear in Home Assistant.
 ## 🔧 Commissioning
 
 The battery ignores the component until its own scheduler is set up, and the vendor app
-undoes that whenever its AI mode is on. Give the component the battery's IP address and it
+undoes that whenever its AI mode is on. Give the component the battery's address and it
 handles this for you, checking every minute and putting it back if it drifts:
 
 ```yaml
@@ -304,6 +315,19 @@ aecc:
     resting_power: -300
     resting_power_number: Resting power   # optional, to change it from Home Assistant
 ```
+
+`host:` also takes a hostname or an mDNS name, so a battery on DHCP does not need a
+reservation:
+
+```yaml
+  datalogger:
+    host: humsienk-control.local
+```
+
+A **Datalogger address** text and a **Datalogger** switch come with the block. The first
+changes the address without reflashing; the second stops the component using the
+datalogger, for when the vendor app or another integration needs it. Name them with
+`host_text:` and `enable_switch:` to change the labels.
 
 ### Why `resting_power` cannot be zero
 
@@ -317,7 +341,7 @@ A small charging value is the quietest non-zero option, and charging can never p
 anything into the grid. If you want the battery to do as close to nothing as possible when
 the ESP32 stops, use something small like `-10` rather than looking for a zero.
 
-The `control_effective` sensor turns off if the battery stops obeying. Put it on a
+The **Setpoint honoured** sensor turns off if the battery stops obeying. Put it on a
 dashboard or an automation to know when that happens. It reports on the control loop, so
 it needs `control:` as well.
 

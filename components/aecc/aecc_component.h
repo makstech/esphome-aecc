@@ -103,7 +103,9 @@ class AeccComponent : public Component
   bool work_mode(WorkMode *out);
   /// Queued for the bus task: the datalogger blocks, so it cannot be written from here.
   void request_work_mode(WorkMode mode);
-  bool datalogger_configured() const { return this->dl_.configured(); }
+  /// Queued the same way: the bus task owns the host string.
+  void request_datalogger_host(const std::string &host);
+  bool datalogger_present() const { return this->dl_.present(); }
   bool ports_ok() const { return this->ports_ok_; }
 
 #ifdef AECC_OTA_AWARE
@@ -187,6 +189,8 @@ class AeccComponent : public Component
   bool work_mode_valid_{false};
   WorkMode wanted_work_mode_{WorkMode::CUSTOM};
   bool work_mode_pending_{false};
+  std::string wanted_host_;
+  bool host_pending_{false};
   std::string ai_charge_, ai_discharge_;
   bool backup_ems_{false};
 

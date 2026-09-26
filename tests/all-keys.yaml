@@ -39,6 +39,7 @@ aecc:
   work_mode_select: Work mode
   datalogger:
     host: 192.0.2.10
+    host_text: Battery address
     resting_power_number: Resting power
   meter:
     type: rs071
@@ -102,39 +103,8 @@ aecc:
 
 sensor:
   - platform: aecc
-    soc:
-      name: soc
-    battery_power:
-      name: battery power
-    grid_power:
-      name: grid power
-    backup_load:
-      name: backup load
-    setpoint:
-      name: setpoint
-    losses:
-      name: losses
-    meter_power:
-      name: meter power
-    meter_power_filtered:
-      name: meter power filtered
-    commanded_power:
-      name: commanded power
-    meter_age:
-      name: meter age
-    loop_rate:
-      name: loop rate
-
-binary_sensor:
-  - platform: aecc
-    control_effective:
-      name: control effective
-    meter_ok:
-      name: meter ok
-    ems_ready:
-      name: ems ready
-
-button:
-  - platform: aecc
-    backup:
-      name: Back up configuration
+    registers:
+      - name: Grid overvoltage trip
+        address: 0xA04D
+        scale: 0.1
+        interval: 60s

@@ -6,6 +6,7 @@
 #include "esphome/components/number/number.h"
 #include "esphome/components/select/select.h"
 #include "esphome/components/switch/switch.h"
+#include "esphome/components/text/text.h"
 
 #include "aecc_component.h"
 
@@ -117,6 +118,34 @@ class WorkModeSelect : public select::Select, public Component, public AeccDevic
   std::map<std::string, WorkMode> modes_;
   bool have_published_{false};
   WorkMode published_{WorkMode::CUSTOM};
+};
+
+/// The datalogger's address, changeable without reflashing. An address, a hostname or an
+/// mDNS name; the component resolves it.
+class DataloggerHostText : public text::Text, public Component, public AeccDevice {
+ public:
+  void setup() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA + 1.0f; }
+
+  void set_default_host(const std::string &host) { this->default_ = host; }
+
+ protected:
+  void control(const std::string &value) override;
+
+  std::string default_;
+  ESPPreferenceObject pref_;
+};
+
+/// Stops the component talking to the datalogger, so something else can have it.
+class DataloggerSwitch : public switch_::Switch, public Component, public AeccDevice {
+ public:
+  void setup() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA + 1.0f; }
+
+ protected:
+  void write_state(bool state) override;
 };
 
 class AeccSwitch : public switch_::Switch, public Component, public RegisterBacked {

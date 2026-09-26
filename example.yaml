@@ -83,47 +83,19 @@ aecc:
       address: 0xA02C
       max_value: 7
 
+# Readings, control diagnostics and health are created automatically. This block is only
+# needed to read a register the component does not model.
 sensor:
   - platform: aecc
-    aecc_id: nova
-    soc:
-      name: Battery SOC
-    battery_power:
-      name: Battery power
-    grid_power:
-      name: Grid power
-    backup_load:
-      name: Backup load
-    setpoint:
-      name: Setpoint
-    meter_power:
-      name: Meter grid power
-    meter_age:
-      name: Meter sample age
-    loop_rate:
-      name: Control loop rate
-    commanded_power:
-      name: Commanded power
     registers:
       - name: Grid overvoltage trip
         address: 0xA04D
         scale: 0.1
         interval: 60s
 
-binary_sensor:
-  - platform: aecc
-    aecc_id: nova
-    control_effective:
-      name: Setpoint honoured
-    meter_ok:
-      name: Meter OK
 
+# The backup button comes with `backup:`.
 button:
-  - platform: aecc
-    aecc_id: nova
-    backup:
-      name: Back up configuration
-
   - platform: template
     name: Set battery type LiFePO4 16S
     entity_category: config
