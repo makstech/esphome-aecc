@@ -62,6 +62,10 @@ aecc:
   control:
     rate: 2Hz
     filter_window: 1.5s
+    law: classic
+    predictive_gain: 0.7
+    actuator_lag: 400ms
+    meter_delay: 500ms
     grid_target: 60
     max_discharge: 600
     max_charge: 2400
@@ -71,6 +75,10 @@ aecc:
     stale_after: 5s
     mode_select: Battery mode
     setpoint_number: Battery power
+    law_select: Control law
+    rate_number: Loop rate
+    filter_window_number: Filter window
+    predictive_gain_number: Predictive gain
     grid_target_number: grid target
     max_discharge_number: max discharge
     max_charge_number: max charge

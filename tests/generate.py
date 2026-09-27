@@ -160,6 +160,10 @@ aecc:
 {control}
     mode_select: Battery mode
     setpoint_number: Battery power
+    law_select: Control law
+    rate_number: Loop rate
+    filter_window_number: Filter window
+    predictive_gain_number: Predictive gain
 """
 
 CONTROL_NUMBERS = tuple(hub.CONTROL_NUMBERS)

@@ -79,6 +79,15 @@ void AeccNumber::apply_(float value) {
     case ControlParam::MANUAL_SETPOINT:
       control->set_manual_setpoint((int32_t) value);
       break;
+    case ControlParam::RATE:
+      control->set_rate(value);
+      break;
+    case ControlParam::FILTER_WINDOW:
+      control->set_filter_window((uint32_t) value);
+      break;
+    case ControlParam::PREDICTIVE_GAIN:
+      control->set_predictive_gain(value);
+      break;
     case ControlParam::NONE:
       break;
   }
@@ -101,6 +110,12 @@ float AeccNumber::current_() {
       return (float) this->parent_->resting_power();
     case ControlParam::MANUAL_SETPOINT:
       return (float) control->manual_setpoint();
+    case ControlParam::RATE:
+      return control->rate();
+    case ControlParam::FILTER_WINDOW:
+      return (float) control->filter_window();
+    case ControlParam::PREDICTIVE_GAIN:
+      return control->predictive_gain();
     default:
       return this->traits.get_min_value();
   }
@@ -191,6 +206,36 @@ void ControlModeSelect::control(const std::string &value) {
 }
 
 void ControlModeSelect::dump_config() { LOG_SELECT("", "AECC control mode", this); }
+
+void ControlLawSelect::setup() {
+  if (this->parent_ == nullptr || this->parent_->control() == nullptr) {
+    ESP_LOGE(TAG, "the control law select needs control: to be configured");
+    this->mark_failed();
+    return;
+  }
+  this->pref_ = this->make_entity_preference<ControlLaw>();
+  ControlLaw law = this->parent_->control()->law();
+  this->pref_.load(&law);
+  for (const auto &option : this->laws_) {
+    if (option.second == law) {
+      this->control(option.first);
+      return;
+    }
+  }
+}
+
+void ControlLawSelect::control(const std::string &value) {
+  const auto found = this->laws_.find(value);
+  if (found == this->laws_.end()) {
+    ESP_LOGW(TAG, "'%s' is not a known control law", value.c_str());
+    return;
+  }
+  this->parent_->control()->set_law(found->second);
+  this->pref_.save(&found->second);
+  this->publish_state(value);
+}
+
+void ControlLawSelect::dump_config() { LOG_SELECT("", "AECC control law", this); }
 
 // --- datalogger host --------------------------------------------------------
 

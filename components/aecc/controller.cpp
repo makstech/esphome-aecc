@@ -40,19 +40,31 @@ void Controller::limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi)
     *lo = 0;  // full: may still discharge, must not charge
 }
 
+int16_t Controller::clamp_(float target, uint16_t soc, bool soc_valid) const {
+  int32_t lo, hi;
+  this->limits_(soc, soc_valid, &lo, &hi);
+  return (int16_t) std::max((float) lo, std::min((float) hi, target));
+}
+
 int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
   const float error = grid_w - (float) this->grid_target_;
   const float delta = error * (error < 0 ? this->ease_per_tick_ : this->ramp_per_tick_);
-  float target = (float) this->command_ + delta;
+  return this->clamp_((float) this->command_ + delta, soc, soc_valid);
+}
 
-  int32_t lo, hi;
-  this->limits_(soc, soc_valid, &lo, &hi);
+int16_t Controller::predict_step_(uint16_t soc, bool soc_valid) {
+  // What the battery was delivering when the meter took the reading being acted on.
+  const size_t back = (this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
+  const float error = this->filtered_ - (float) this->grid_target_;
+  // Toward export the whole error at once; toward import a share, as a margin for a model
+  // that is only approximately the inverter.
+  return this->clamp_(this->modelled_[back] + error * (error < 0 ? 1.0f : this->gain_), soc, soc_valid);
+}
 
-  if (target < (float) lo)
-    target = (float) lo;
-  if (target > (float) hi)
-    target = (float) hi;
-  return (int16_t) target;
+void Controller::advance_model_() {
+  const float now = this->modelled_[this->modelled_head_];
+  this->modelled_head_ = (this->modelled_head_ + 1) % MAX_DELAY_TICKS;
+  this->modelled_[this->modelled_head_] = now + ((float) this->command_ - now) * this->alpha_;
 }
 
 void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool may_command) {
@@ -64,6 +76,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   if (mode != this->last_mode_) {
     this->last_mode_ = mode;
     this->reset_filter_();
+    std::fill(this->modelled_, this->modelled_ + MAX_DELAY_TICKS, 0.0f);
   }
 
   // Read in every mode, so the meter stays a grid reading while nothing is regulated.
@@ -93,7 +106,12 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   }
 
   if (fresh) {
-    this->command_ = this->frozen_ || !this->warm() ? 0 : this->step_(this->filtered_, soc, soc_valid);
+    if (this->frozen_ || !this->warm())
+      this->command_ = 0;
+    else if (this->law_ == ControlLaw::PREDICTIVE)
+      this->command_ = this->predict_step_(soc, soc_valid);
+    else
+      this->command_ = this->step_(this->filtered_, soc, soc_valid);
   } else {
     const uint32_t age = this->meter_ == nullptr ? UINT32_MAX : this->meter_->age_ms();
     if (age < this->stale_after_ms_)
@@ -159,6 +177,9 @@ bool Controller::redeliver(ModbusRtu *inverter) {
 void Controller::deliver_(ModbusRtu *inverter) {
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
   this->delivered_at_ = millis();
+  // Advanced whichever law is running, so switching to the predictive one starts from a
+  // model that already knows what was commanded.
+  this->advance_model_();
   if (!wrote) {
     // Do not keep integrating against a command the inverter never received, or the
     // error accumulates to the cap and lands all at once when the bus comes back.

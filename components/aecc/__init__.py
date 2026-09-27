@@ -29,6 +29,8 @@ from esphome.const import (
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
     UNIT_PERCENT,
+    UNIT_HERTZ,
+    UNIT_MILLISECOND,
     UNIT_WATT,
 )
 
@@ -54,6 +56,8 @@ AeccSwitch = aecc_ns.class_("AeccSwitch", switch.Switch, cg.Component)
 AeccSelect = aecc_ns.class_("AeccSelect", select.Select, cg.Component)
 ControlModeSelect = aecc_ns.class_("ControlModeSelect", select.Select, cg.Component)
 ControlMode = aecc_ns.enum("ControlMode", is_class=True)
+ControlLaw = aecc_ns.enum("ControlLaw", is_class=True)
+ControlLawSelect = aecc_ns.class_("ControlLawSelect", select.Select, cg.Component)
 WorkModeSelect = aecc_ns.class_("WorkModeSelect", select.Select, cg.Component)
 WorkMode = aecc_ns.enum("WorkMode", is_class=True)
 DataloggerHostText = aecc_ns.class_("DataloggerHostText", text.Text, cg.Component)
@@ -372,6 +376,25 @@ MODES = {
     "Manual": "MANUAL",
 }
 
+LAWS = {
+    "classic": ControlLaw.CLASSIC,
+    "predictive": ControlLaw.PREDICTIVE,
+}
+LAW_LABELS = {
+    "Classic": "classic",
+    "Predictive": "predictive",
+}
+CONF_LAW = "law"
+CONF_PREDICTIVE_GAIN = "predictive_gain"
+CONF_ACTUATOR_LAG = "actuator_lag"
+CONF_METER_DELAY = "meter_delay"
+# The loop's tuning as controls, each starting from its option above.
+TUNING_NUMBERS = {
+    CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ), "RATE", "Loop rate"),
+    CONF_FILTER_WINDOW: (_control_number(0, 3000, 50, UNIT_MILLISECOND), "FILTER_WINDOW", "Filter window"),
+    CONF_PREDICTIVE_GAIN: (_control_number(0.1, 1, 0.05, cv.UNDEFINED), "PREDICTIVE_GAIN", "Predictive gain"),
+}
+
 WORK_MODES = {
     "Self-consumption": "SELF_CONSUMPTION",
     "Custom": "CUSTOM",
@@ -382,6 +405,16 @@ CONTROL_SCHEMA = cv.Schema(
         cv.GenerateID(): cv.declare_id(Controller),
         cv.Optional(CONF_RATE, default="2Hz"): cv.frequency,
         cv.Optional(CONF_FILTER_WINDOW, default="1.5s"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_LAW, default="classic"): cv.enum(LAWS, lower=True),
+        # The predictive law's share of an import error per tick; export is corrected whole.
+        cv.Optional(CONF_PREDICTIVE_GAIN, default=0.7): cv.float_range(min=0.1, max=1.0),
+        # Measured: the inverter follows a step as a ~0.4 s first-order lag, and the meter
+        # shows it ~0.5 s later.
+        cv.Optional(CONF_ACTUATOR_LAG, default="400ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_METER_DELAY, default="500ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(f"{CONF_LAW}_select", default="Control law"): _named(
+            select.select_schema(ControlLawSelect).extend(cv.COMPONENT_SCHEMA), "Control law"
+        ),
         # Holds a little import rather than sitting on zero, because the meter reading
         # swings tens of watts between samples and the margin keeps that noise out of
         # export. Negative exports deliberately.
@@ -405,6 +438,8 @@ CONTROL_SCHEMA = cv.Schema(
 ).extend({
     cv.Optional(f"{key}_number", default=spec[2]): spec[0]
     for key, spec in CONTROL_NUMBERS.items()
+}).extend({
+    cv.Optional(f"{key}_number", default=spec[2]): spec[0] for key, spec in TUNING_NUMBERS.items()
 })
 
 
@@ -683,7 +718,28 @@ async def to_code(config):
         cg.add(control.set_max_soc(conf[CONF_MAX_SOC]))
         cg.add(control.set_ramp_up(conf[CONF_RAMP_UP]))
         cg.add(control.set_stale_after(conf[CONF_STALE_AFTER]))
+        cg.add(control.set_law(conf[CONF_LAW]))
+        cg.add(control.set_predictive_gain(conf[CONF_PREDICTIVE_GAIN]))
+        cg.add(control.set_actuator_lag(conf[CONF_ACTUATOR_LAG]))
+        cg.add(control.set_meter_delay(conf[CONF_METER_DELAY]))
         cg.add(var.set_control(control))
+
+        entry = conf.get(f"{CONF_LAW}_select")
+        if entry is not None:
+            law_select = await select.new_select(entry, options=list(LAW_LABELS))
+            await cg.register_component(law_select, entry)
+            cg.add(law_select.set_parent(var))
+            for label, key in LAW_LABELS.items():
+                cg.add(law_select.add_law(LAWS[key], label))
+        initial = {
+            CONF_RATE: conf[CONF_RATE],
+            CONF_FILTER_WINDOW: conf[CONF_FILTER_WINDOW].total_milliseconds,
+            CONF_PREDICTIVE_GAIN: conf[CONF_PREDICTIVE_GAIN],
+        }
+        for key, (_, param, _name) in TUNING_NUMBERS.items():
+            entry = conf.get(f"{key}_number")
+            if entry is not None:
+                await _control_number_to_code(var, entry, param, initial[key])
 
         # A mode with no way to steer it is worse than no mode: zero export regulates
         # against a meter, and manual does nothing without a number to set.

@@ -25,6 +25,9 @@ enum class ControlParam : uint8_t {
   MAX_SOC,
   RESTING_POWER,
   MANUAL_SETPOINT,
+  RATE,
+  FILTER_WINDOW,
+  PREDICTIVE_GAIN,
 };
 
 /// Reads a cached register and republishes it on every sweep, so a write the inverter
@@ -97,6 +100,22 @@ class ControlModeSelect : public select::Select, public Component, public AeccDe
   bool apply_(ControlMode mode);
 
   std::map<std::string, ControlMode> modes_;
+  ESPPreferenceObject pref_;
+};
+
+/// Chooses the zero-export control law, and remembers it across a reboot.
+class ControlLawSelect : public select::Select, public Component, public AeccDevice {
+ public:
+  void setup() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA + 1.0f; }
+
+  void add_law(ControlLaw law, const std::string &label) { this->laws_[label] = law; }
+
+ protected:
+  void control(const std::string &value) override;
+
+  std::map<std::string, ControlLaw> laws_;
   ESPPreferenceObject pref_;
 };
 

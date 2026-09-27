@@ -18,6 +18,15 @@ enum class ControlMode : uint8_t {
   MANUAL,
 };
 
+/// How zero export turns the grid error into a command.
+enum class ControlLaw : uint8_t {
+  /// Adds a share of the error to the last command every tick.
+  CLASSIC = 0,
+  /// Adds the error to what a model says the battery is delivering, so the part of the
+  /// last command still on its way is not asked for twice.
+  PREDICTIVE,
+};
+
 /// Drives the inverter's power setpoint, either to hold the metered phase at a target or
 /// to a value someone set directly.
 ///
@@ -40,12 +49,26 @@ class Controller {
 
   void set_rate(float hz) {
     this->period_ms_ = (uint32_t) (1000.0f / (hz > 0.1f ? hz : 0.1f));
-    this->recompute_ramp_();
+    this->recompute_timing_();
   }
+  float rate() const { return 1000.0f / (float) this->period_ms_; }
   void set_filter_window(uint32_t ms) { this->window_ms_ = ms; }
+  uint32_t filter_window() const { return this->window_ms_; }
   void set_ramp_up(float fraction) {
     this->ramp_up_ = fraction;
-    this->recompute_ramp_();
+    this->recompute_timing_();
+  }
+  void set_law(ControlLaw law) { this->law_ = law; }
+  ControlLaw law() const { return this->law_; }
+  void set_predictive_gain(float gain) { this->gain_ = gain; }
+  float predictive_gain() const { return this->gain_; }
+  void set_actuator_lag(uint32_t ms) {
+    this->lag_ms_ = ms;
+    this->recompute_timing_();
+  }
+  void set_meter_delay(uint32_t ms) {
+    this->delay_ms_ = ms;
+    this->recompute_timing_();
   }
   void set_stale_after(uint32_t ms) { this->stale_after_ms_ = ms; }
   void set_min_soc(uint8_t pct) { this->min_soc_ = pct; }
@@ -111,11 +134,18 @@ class Controller {
   /// a second to respond, so until it does a faster loop sees the same error on every tick;
   /// scaling each tick's share by its length keeps the correction per second the same in
   /// both directions.
-  void recompute_ramp_() {
+  void recompute_timing_() {
     const float share = (float) this->period_ms_ / (float) VALIDATED_PERIOD_MS;
     this->ramp_per_tick_ = std::min(1.0f, this->ramp_up_ * share);
     this->ease_per_tick_ = std::min(1.0f, share);
+    this->alpha_ = 1.0f - expf(-(float) this->period_ms_ / (float) std::max<uint32_t>(this->lag_ms_, 1));
+    this->delay_ticks_ = std::min<size_t>(MAX_DELAY_TICKS - 1,
+                                          (this->delay_ms_ + this->period_ms_ / 2) / this->period_ms_);
   }
+  int16_t clamp_(float target, uint16_t soc, bool soc_valid) const;
+  int16_t predict_step_(uint16_t soc, bool soc_valid);
+  /// Moves the model of what the battery delivers one tick toward what was commanded.
+  void advance_model_();
   /// Median, not mean: the meter swings tens of watts at steady state and a mean lets a
   /// single spike move the setpoint. The window is in seconds so that changing the loop
   /// rate does not silently change how much smoothing is applied.
@@ -132,6 +162,19 @@ class Controller {
   float ramp_per_tick_{0.35f};
   /// The share of an excess-discharge error removed per tick; the whole of it at 2 Hz.
   float ease_per_tick_{1.0f};
+
+  ControlLaw law_{ControlLaw::CLASSIC};
+  float gain_{0.7f};
+  /// The inverter follows a new setpoint as a first-order lag of about this; the meter
+  /// reports what it did about delay_ms_ later.
+  uint32_t lag_ms_{400};
+  uint32_t delay_ms_{500};
+  static const size_t MAX_DELAY_TICKS = 32;
+  float alpha_{0.71f};
+  size_t delay_ticks_{1};
+  /// Modelled battery power, one entry per tick, newest at modelled_head_.
+  float modelled_[MAX_DELAY_TICKS]{};
+  size_t modelled_head_{0};
   uint8_t min_soc_{15};
   uint8_t max_soc_{90};
 
