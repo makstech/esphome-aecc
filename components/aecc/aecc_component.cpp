@@ -437,6 +437,13 @@ void AeccComponent::apply_work_mode_() {
   this->unlock_();
 }
 
+// The datalogger reports some of these as floats, so "0.0" has to match "0".
+static bool same_number(const std::string &got, const char *want) {
+  char *end = nullptr;
+  const float value = strtof(got.c_str(), &end);
+  return end != got.c_str() && *end == '\0' && value == strtof(want, nullptr);
+}
+
 void AeccComponent::reconcile_() {
   // 0xFE16 only modulates a command the energy manager is already running, so these are
   // what make the control loop work at all. The vendor app's AI mode rewrites them
@@ -473,7 +480,7 @@ void AeccComponent::reconcile_() {
       {3000, "1"}, {3020, "6"}, {3021, "0"}, {3022, "0"},
       {3026, "0"}, {3029, "0"}, {3030, "1"}};
   for (const auto &r : required) {
-    if (got[r.first] != r.second)
+    if (!same_number(got[r.first], r.second))
       fix[r.first] = r.second;
   }
   if (got[3003] != slot)

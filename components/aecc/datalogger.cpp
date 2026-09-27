@@ -43,7 +43,9 @@ static const uint32_t TOTAL_MS = 3000;
 
 std::string Datalogger::slot(int32_t watts, uint8_t max_soc, uint8_t min_soc) {
   char buf[64];
-  snprintf(buf, sizeof(buf), "1,00:00,23:59,%d,0,6,0,0,0,%u,%u", (int) watts, (unsigned) max_soc,
+  // Field seven is 5 on units with storage, as the vendor integration writes it; only AEG
+  // firmware wants 0 there.
+  snprintf(buf, sizeof(buf), "1,00:00,23:59,%d,0,6,5,0,0,%u,%u", (int) watts, (unsigned) max_soc,
            (unsigned) min_soc);
   return buf;
 }
