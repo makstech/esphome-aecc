@@ -28,6 +28,7 @@ enum class ControlParam : uint8_t {
   RATE,
   FILTER_WINDOW,
   PREDICTIVE_GAIN,
+  METER_DELAY,
 };
 
 /// Reads a cached register and republishes it on every sweep, so a write the inverter

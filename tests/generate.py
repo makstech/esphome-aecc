@@ -164,6 +164,7 @@ aecc:
     rate_number: Loop rate
     filter_window_number: Filter window
     predictive_gain_number: Predictive gain
+    meter_delay_number: Meter delay
 """
 
 CONTROL_NUMBERS = tuple(hub.CONTROL_NUMBERS)

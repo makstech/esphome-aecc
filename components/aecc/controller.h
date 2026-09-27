@@ -70,6 +70,7 @@ class Controller {
     this->delay_ms_ = ms;
     this->recompute_timing_();
   }
+  uint32_t meter_delay() const { return this->delay_ms_; }
   void set_stale_after(uint32_t ms) { this->stale_after_ms_ = ms; }
   void set_min_soc(uint8_t pct) { this->min_soc_ = pct; }
   void set_max_soc(uint8_t pct) { this->max_soc_ = pct; }

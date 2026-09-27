@@ -486,6 +486,7 @@ its default.
 | `rate_number` | `Loop rate` | `rate` as a control, for tuning live |
 | `filter_window_number` | `Filter window` | The same for `filter_window` |
 | `predictive_gain_number` | `Predictive gain` | The same for `predictive_gain` |
+| `meter_delay_number` | `Meter delay` | The same for `meter_delay` |
 
 **`datalogger:`**
 

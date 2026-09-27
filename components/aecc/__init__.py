@@ -393,6 +393,7 @@ TUNING_NUMBERS = {
     CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ), "RATE", "Loop rate"),
     CONF_FILTER_WINDOW: (_control_number(0, 3000, 50, UNIT_MILLISECOND), "FILTER_WINDOW", "Filter window"),
     CONF_PREDICTIVE_GAIN: (_control_number(0.1, 1, 0.05, cv.UNDEFINED), "PREDICTIVE_GAIN", "Predictive gain"),
+    CONF_METER_DELAY: (_control_number(0, 2000, 50, UNIT_MILLISECOND), "METER_DELAY", "Meter delay"),
 }
 
 WORK_MODES = {
@@ -735,6 +736,7 @@ async def to_code(config):
             CONF_RATE: conf[CONF_RATE],
             CONF_FILTER_WINDOW: conf[CONF_FILTER_WINDOW].total_milliseconds,
             CONF_PREDICTIVE_GAIN: conf[CONF_PREDICTIVE_GAIN],
+            CONF_METER_DELAY: conf[CONF_METER_DELAY].total_milliseconds,
         }
         for key, (_, param, _name) in TUNING_NUMBERS.items():
             entry = conf.get(f"{key}_number")
