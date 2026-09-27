@@ -12,6 +12,7 @@ from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
+    CONF_DURATION,
     CONF_ID,
     CONF_INTERNAL,
     CONF_MODE,
@@ -64,6 +65,8 @@ Health = aecc_ns.enum("Health", is_class=True)
 AeccBackupButton = aecc_ns.class_("AeccBackupButton", button.Button, cg.Component)
 ControlParam = aecc_ns.enum("ControlParam", is_class=True)
 RestoreHandler = aecc_ns.class_("RestoreHandler", cg.Component)
+TraceHandler = aecc_ns.class_("TraceHandler", cg.Component)
+AeccTraceButton = aecc_ns.class_("AeccTraceButton", button.Button, cg.Component)
 
 CONF_AECC_ID = "aecc_id"
 CONF_UNIT = "unit"
@@ -80,6 +83,7 @@ CONF_RAMP_UP = "ramp_up"
 CONF_STALE_AFTER = "stale_after"
 CONF_REGISTER = "register"
 CONF_BACKUP = "backup"
+CONF_TRACE = "trace"
 CONF_DATALOGGER = "datalogger"
 CONF_HOST = "host"
 CONF_REPLY_WINDOW = "reply_window"
@@ -408,6 +412,24 @@ CONTROL_SCHEMA = cv.Schema(
 })
 
 
+TRACE_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(TraceHandler),
+        cv.GenerateID(CONF_WEB_SERVER_BASE_ID): cv.use_id(web_server_base.WebServerBase),
+        cv.Optional(CONF_URL, default="/aecc/trace"): cv.string_strict,
+        # Samples are held in RAM until fetched, about 24 bytes each at ~9 a second.
+        cv.Optional(CONF_DURATION, default="30s"): cv.All(
+            cv.positive_time_period_milliseconds,
+            cv.Range(max=cv.TimePeriod(seconds=120)),
+        ),
+        cv.Optional(CONF_BUTTON, default="Record trace"): _named(
+            button.button_schema(AeccTraceButton, entity_category=ENTITY_CATEGORY_DIAGNOSTIC)
+            .extend(cv.COMPONENT_SCHEMA)
+        ),
+    }
+)
+
+
 def _in_number_range(conf, key, number_key, path):
     """A value outside its own number's range is clamped away at boot, silently."""
     entry = conf.get(number_key)
@@ -478,6 +500,7 @@ CONFIG_SCHEMA = cv.All(
             # Serving the backup over HTTP needs a web server; without it the button
             # still works and the result is fetched some other way.
             cv.Optional(CONF_BACKUP): _block(BACKUP_SCHEMA),
+            cv.Optional(CONF_TRACE): _block(TRACE_SCHEMA),
             # Reaches the EMS registers, which are not on Modbus. Without it the
             # schedule slot has to be set by hand and nothing keeps it there.
             cv.Optional(CONF_DATALOGGER): _block(DATALOGGER_SCHEMA),
@@ -705,6 +728,18 @@ async def to_code(config):
         backup_button = await button.new_button(conf[CONF_BUTTON])
         await cg.register_component(backup_button, conf[CONF_BUTTON])
         cg.add(backup_button.set_parent(var))
+
+    if CONF_TRACE in config:
+        conf = config[CONF_TRACE]
+        base = await cg.get_variable(conf[CONF_WEB_SERVER_BASE_ID])
+        handler = cg.new_Pvariable(conf[CONF_ID], base)
+        await cg.register_component(handler, conf)
+        cg.add(handler.set_parent(var))
+        cg.add(handler.set_url(conf[CONF_URL]))
+        cg.add(var.set_trace_duration(conf[CONF_DURATION]))
+        trace_button = await button.new_button(conf[CONF_BUTTON])
+        await cg.register_component(trace_button, conf[CONF_BUTTON])
+        cg.add(trace_button.set_parent(var))
 
     await _register_entities(var, config)
     await _register_telemetry(var, config)

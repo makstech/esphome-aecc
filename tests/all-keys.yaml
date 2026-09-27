@@ -40,6 +40,10 @@ aecc:
     url: /aecc/backup
     restore_url: /aecc/restore
     button: Take a backup
+  trace:
+    url: /aecc/trace
+    duration: 30s
+    button: Take a trace
   work_mode_select: Work mode
   datalogger:
     host: 192.0.2.10

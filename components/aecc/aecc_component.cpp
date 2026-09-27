@@ -158,6 +158,92 @@ std::string AeccComponent::backup_text() {
   return out;
 }
 
+void AeccComponent::request_trace() {
+  this->lock_();
+  if (!this->trace_running_) {
+    this->trace_.clear();
+    this->trace_.reserve(this->trace_ms_ / TRACE_EVERY_MS + 8);
+    this->trace_started_ = millis();
+    this->trace_next_ = this->trace_started_;
+    this->trace_running_ = true;
+    ESP_LOGI(TAG, "trace started, %u s", (unsigned) (this->trace_ms_ / 1000));
+  }
+  this->unlock_();
+}
+
+bool AeccComponent::trace_running() {
+  this->lock_();
+  const bool running = this->trace_running_;
+  this->unlock_();
+  return running;
+}
+
+static void append_reading(std::string &out, int32_t value, bool present) {
+  out += ',';
+  if (present)
+    out += std::to_string(value);
+}
+
+std::string AeccComponent::trace_csv() {
+  // Copied out under the lock and formatted outside it, so a slow client never holds the
+  // bus task up.
+  std::vector<TraceSample> samples;
+  this->lock_();
+  if (!this->trace_running_)
+    samples = this->trace_;
+  this->unlock_();
+  if (samples.empty())
+    return "";
+
+  std::string out = "t_ms,meter_w,battery_w,grid_w,backup_w,setpoint_w,command_w,mode\n";
+  out.reserve(out.size() + samples.size() * 40);
+  for (const auto &s : samples) {
+    out += std::to_string(s.t_ms);
+    append_reading(out, s.meter, s.meter != NO_READING);
+    append_reading(out, s.battery, s.battery != NO_READING);
+    append_reading(out, s.grid, s.grid != NO_READING);
+    append_reading(out, s.backup, s.backup != NO_READING);
+    append_reading(out, s.setpoint, s.setpoint != NO_READING);
+    append_reading(out, s.command, true);
+    append_reading(out, s.mode, true);
+    out += '\n';
+  }
+  return out;
+}
+
+void AeccComponent::trace_step_() {
+  const uint32_t now = millis();
+  this->trace_next_ = now + TRACE_EVERY_MS;
+  TraceSample sample{};
+  sample.t_ms = now - this->trace_started_;
+
+  MeterSource *meter = this->control_ == nullptr ? nullptr : this->control_->meter();
+  float watts;
+  sample.meter = meter != nullptr && meter->poll(&watts)
+                     ? (int16_t) std::max(-32767.0f, std::min(32767.0f, watts))
+                     : NO_READING;
+
+  // One read across the telemetry window, so the four values are from the same instant.
+  uint16_t regs[reg::SETPOINT - reg::BATTERY_POWER + 1];
+  const bool have = this->inverter_.read(reg::BATTERY_POWER, sizeof(regs) / sizeof(regs[0]), regs, 1);
+  sample.battery = have ? (int16_t) regs[0] : NO_READING;
+  sample.grid = have ? (int16_t) regs[reg::GRID_POWER - reg::BATTERY_POWER] : NO_READING;
+  sample.backup = have ? (int16_t) regs[reg::BACKUP_LOAD - reg::BATTERY_POWER] : NO_READING;
+  sample.setpoint = have ? (int16_t) regs[reg::SETPOINT - reg::BATTERY_POWER] : NO_READING;
+  if (this->control_ != nullptr) {
+    sample.command = this->control_->command();
+    sample.mode = (uint8_t) this->control_->mode();
+  }
+
+  this->lock_();
+  this->trace_.push_back(sample);
+  if (now - this->trace_started_ >= this->trace_ms_ || this->trace_.size() >= this->trace_.capacity()) {
+    this->trace_running_ = false;
+    ESP_LOGI(TAG, "trace done, %u samples", (unsigned) this->trace_.size());
+  }
+  this->unlock_();
+}
+
 void AeccComponent::backup_step_() {
   this->lock_();
   const size_t island = this->backup_island_;
@@ -597,6 +683,12 @@ void AeccComponent::bus_task_() {
       ESP_LOGI(TAG, "OTA ended without rebooting; resuming");
     }
 #endif
+
+    // Ahead of housekeeping, which only gets the gaps while a trace records.
+    if (this->trace_running_ && this->ports_ok_ && (int32_t) (millis() - this->trace_next_) >= 0) {
+      this->trace_step_();
+      continue;
+    }
 
     this->ticks_since_housekeeping_ = 0;
 

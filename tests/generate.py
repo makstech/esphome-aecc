@@ -145,6 +145,9 @@ aecc:
   backup:
 {backup}
     button: Take a backup
+  trace:
+{trace}
+    button: Take a trace
   work_mode_select: Work mode
   datalogger:
 {datalogger}
@@ -164,7 +167,7 @@ CONTROL_NUMBERS = tuple(hub.CONTROL_NUMBERS)
 
 def render():
     title = lambda k: k.replace("_", " ")
-    head = HEAD.format(top=options(""), **{b: options(b) for b in ("backup", "datalogger", "meter", "control")})
+    head = HEAD.format(top=options(""), **{b: options(b) for b in ("backup", "trace", "datalogger", "meter", "control")})
     out = head.splitlines()
     out += [f"    {k}_number: {title(k)}" for k in CONTROL_NUMBERS]
     out += [f"  {k}_number: {title(k)}" for k in settings.NUMBERS]

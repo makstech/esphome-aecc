@@ -417,6 +417,23 @@ Restore writes the settings and the energy manager's own values, skips anything 
 correct, and stops if the battery starts refusing. It does not switch the battery on, so
 on a completely blank unit that last step is still yours.
 
+## 📈 Traces
+
+For tuning the loop, `trace:` records what it sees as fast as the two buses allow, about
+nine samples a second, and serves the last recording as CSV:
+
+```yaml
+aecc:
+  trace:
+```
+
+Press **Record trace**, do whatever you want to see (step the Manual setpoint, switch a
+load on), then fetch `http://<device>/aecc/trace` once the recording ends. Each row has a
+timestamp in milliseconds, the meter reading, the inverter's battery, grid-port and backup
+power, the setpoint register as the inverter holds it, the loop's command and the mode
+(`0` Off, `1` Zero export, `2` Manual). A setpoint that differs from the command is
+something else writing to the battery. It needs `web_server:`.
+
 ## 📋 All options
 
 Everything the component accepts besides the entity tables and the battery settings, with
@@ -431,7 +448,7 @@ its default.
 | `expose_all_settings` | `false` | Also shows the commissioning settings, see [Battery settings](#-battery-settings) |
 | `work_mode_select` | `Work mode` | The Work mode dropdown; needs `datalogger:` |
 | `registers` | none | Settings by address, see [Battery settings](#-battery-settings) |
-| `meter`, `control`, `datalogger`, `backup` | | The blocks below |
+| `meter`, `control`, `datalogger`, `backup`, `trace` | | The blocks below |
 
 **`meter:`** — without it there is no Zero export
 
@@ -484,6 +501,14 @@ its default.
 | `url` | `/aecc/backup` | Where the backup is served |
 | `restore_url` | `/aecc/restore` | Where a backup is posted to restore it |
 | `button` | `Back up configuration` | Takes a backup |
+
+**`trace:`** — see [Traces](#-traces)
+
+| Key | Default | What it does |
+|---|---|---|
+| `url` | `/aecc/trace` | Where the last trace is served |
+| `duration` | `30s` | How long one recording runs, up to 2 minutes |
+| `button` | `Record trace` | Starts a recording |
 
 Numbers show as a number box unless their unit is a percentage; set `mode:` on one to
 override.

@@ -73,5 +73,10 @@ class AeccBackupButton : public button::Button, public Component, public AeccDev
   void press_action() override { this->parent_->request_backup(); }
 };
 
+class AeccTraceButton : public button::Button, public Component, public AeccDevice {
+ protected:
+  void press_action() override { this->parent_->request_trace(); }
+};
+
 }  // namespace aecc
 }  // namespace esphome

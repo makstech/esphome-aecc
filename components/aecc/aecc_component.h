@@ -15,6 +15,7 @@
 #include "controller.h"
 
 #include <algorithm>
+#include <climits>
 #include <map>
 #include <string>
 #include <vector>
@@ -77,6 +78,13 @@ class AeccComponent : public Component
   bool backup_running();
   /// Empty until a backup has completed.
   std::string backup_text();
+
+  /// Record what the loop sees, as fast as the two buses allow, for tuning it.
+  void request_trace();
+  bool trace_running();
+  /// The last completed trace as CSV; empty while one is recording or before the first.
+  std::string trace_csv();
+  void set_trace_duration(uint32_t ms) { this->trace_ms_ = ms; }
 
   /// Apply a previously captured backup. Only the settings island is written: the rest of
   /// the map is incompletely identified, and an illegal write is a worse prospect than an
@@ -144,6 +152,20 @@ class AeccComponent : public Component
   bool logged_ready_{false};
 
   bool backup_running_{false};
+
+  struct TraceSample {
+    uint32_t t_ms;
+    int16_t meter, battery, grid, backup, setpoint, command;
+    uint8_t mode;
+  };
+  static const int16_t NO_READING = INT16_MIN;
+  static const uint32_t TRACE_EVERY_MS = 100;
+  std::vector<TraceSample> trace_;
+  volatile bool trace_running_{false};
+  uint32_t trace_ms_{30000};
+  uint32_t trace_started_{0};
+  uint32_t trace_next_{0};
+  void trace_step_();
   size_t backup_island_{0};
   uint16_t backup_addr_{0};
   uint16_t backup_count_{0};
