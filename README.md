@@ -376,8 +376,9 @@ anything into the grid. If you want the battery to do as close to nothing as pos
 the ESP32 stops, use something small like `-10` rather than looking for a zero.
 
 The datalogger also pushes that value into the battery every few seconds, over whatever
-the ESP32 last commanded. So between control ticks the ESP32 rewrites its setpoint every
-100 ms, and a push stands for no longer than that.
+the ESP32 last commanded. So between control ticks the ESP32 checks its setpoint every
+100 ms and puts it back when a push has overwritten it, then ignores the meter for a
+moment: the blip that follows is the push, not the house.
 
 The **Setpoint honoured** sensor turns off if the battery stops obeying. Put it on a
 dashboard or an automation to know when that happens. It reports on the control loop, so

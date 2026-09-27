@@ -100,9 +100,10 @@ class Controller {
   // may_command is false while the energy manager is unconfirmed: the meter is still read,
   // and nothing is written.
   void tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool may_command);
-  /// Rewrites the last command between ticks. The datalogger pushes its schedule slot into
-  /// the setpoint register every few seconds; this bounds how long a push stands.
-  bool redeliver(ModbusRtu *inverter);
+  /// Between ticks, checks the setpoint register and puts the command back when the
+  /// datalogger's periodic push has overwritten it. The loop then ignores the meter for a
+  /// moment, since the blip that follows is the push, not the house.
+  bool guard(ModbusRtu *inverter);
 
   /// False when the setpoint register stops agreeing with what we command.
   ///
@@ -202,8 +203,16 @@ class Controller {
   uint32_t loops_{0};
 
   static const uint32_t READBACK_EVERY_MS = 5000;
-  static const uint32_t REDELIVER_MS = 100;
-  uint32_t delivered_at_{0};
+  static const uint32_t GUARD_EVERY_MS = 100;
+  /// Measured: a push shows on the meter for about half a second after it lands.
+  static const uint32_t PUSH_MASK_MS = 800;
+  uint32_t guarded_at_{0};
+  uint32_t pushed_at_{0};
+  bool pushed_{false};
+  /// A push is a disagreement after an agreement. One that persists is the inverter not
+  /// taking the setpoint at all, which must not hold the loop still.
+  bool guard_agreed_{true};
+  bool masked_() const { return this->pushed_ && millis() - this->pushed_at_ < PUSH_MASK_MS; }
   /// The datalogger re-asserts its own value every 2-3 s, so a single disagreement is
   /// expected; only a run of them means the writes are not landing.
   static const uint8_t MISMATCHES_BEFORE_ALARM = 3;

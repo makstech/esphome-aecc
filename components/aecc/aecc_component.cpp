@@ -642,7 +642,7 @@ void AeccComponent::bus_task_() {
         this->control_->tick(&this->inverter_, soc, soc_valid, may_command);
         continue;
       }
-      if (this->control_->redeliver(&this->inverter_))
+      if (this->control_->guard(&this->inverter_))
         continue;
     }
 

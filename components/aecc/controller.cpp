@@ -105,7 +105,9 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     return;
   }
 
-  if (fresh) {
+  if (fresh && this->masked_()) {
+    // Hold the command: the reading is the push's blip.
+  } else if (fresh) {
     if (this->frozen_ || !this->warm())
       this->command_ = 0;
     else if (this->law_ == ControlLaw::PREDICTIVE)
@@ -150,7 +152,8 @@ bool Controller::read_meter_(float *watts) {
   }
   this->last_grid_ = *watts;
   this->meter_ok_ = !this->frozen_;
-  this->filtered_ = this->filter_(*watts);
+  if (!this->masked_())
+    this->filtered_ = this->filter_(*watts);
   return true;
 }
 
@@ -164,19 +167,29 @@ void Controller::idle_() {
   this->effective_ = false;
 }
 
-bool Controller::redeliver(ModbusRtu *inverter) {
+bool Controller::guard(ModbusRtu *inverter) {
   if (this->parked_ || this->last_mode_ == ControlMode::OFF ||
-      millis() - this->delivered_at_ < REDELIVER_MS)
+      millis() - this->guarded_at_ < GUARD_EVERY_MS)
     return false;
-  // A failed frame waits its turn like a good one; the tick deals with a bus that stays down.
-  inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
-  this->delivered_at_ = millis();
+  this->guarded_at_ = millis();
+  uint16_t raw;
+  if (!inverter->read_one(reg::SETPOINT, &raw, 1))
+    return true;
+  const bool agrees = (int16_t) raw == this->command_;
+  if (!agrees) {
+    inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
+    if (this->guard_agreed_) {
+      this->pushed_ = true;
+      this->pushed_at_ = millis();
+    }
+  }
+  this->guard_agreed_ = agrees;
   return true;
 }
 
 void Controller::deliver_(ModbusRtu *inverter) {
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
-  this->delivered_at_ = millis();
+  this->guarded_at_ = millis();
   // Advanced whichever law is running, so switching to the predictive one starts from a
   // model that already knows what was commanded.
   this->advance_model_();
