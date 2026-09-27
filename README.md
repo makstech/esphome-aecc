@@ -102,6 +102,13 @@ configured, so a setup without a meter has no meter readings.
 | `setpoint_sensor` | Setpoint | What the battery has been told to do |
 | `losses_sensor` | Losses | Standby and conversion losses |
 
+**Energy** — always, for Home Assistant's Energy dashboard
+
+| Key | Name | What it is |
+|---|---|---|
+| `energy_charged_sensor` | Energy charged | Energy into the battery, kWh, integrated on the device from battery power every 5 s and kept across reboots |
+| `energy_discharged_sensor` | Energy discharged | Energy out of the battery, the same way |
+
 **Control diagnostics** — with `control:`, and the meter ones also with `meter:`
 
 | Key | Name | What it is |

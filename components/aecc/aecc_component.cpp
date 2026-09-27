@@ -1,5 +1,6 @@
 #include "aecc_component.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 #include <utility>
@@ -17,6 +18,9 @@ static const char *VERSION = "0.1.0";
 static const size_t MAX_PENDING_WRITES = 16;
 
 void AeccComponent::setup() {
+  this->energy_pref_ = global_preferences->make_preference<EnergyTotals>(fnv1_hash("aecc_energy"));
+  if (this->energy_pref_.load(&this->energy_))
+    this->energy_saved_ = this->energy_;
 #ifdef USE_ESP32
   if (this->mutex_ == nullptr) {
     this->mark_failed();
@@ -156,6 +160,34 @@ std::string AeccComponent::backup_text() {
   std::string out = this->backup_done_;
   this->unlock_();
   return out;
+}
+
+void AeccComponent::integrate_energy_(int16_t watts, uint32_t now) {
+  if (this->energy_started_ && now - this->energy_last_at_ < ENERGY_GAP_MS) {
+    // The previous reading stood until this one.
+    const double wh = (double) this->energy_last_w_ * (double) (now - this->energy_last_at_) / 3600000.0;
+    if (wh > 0)
+      this->energy_.discharged_wh += wh;
+    else
+      this->energy_.charged_wh -= wh;
+  }
+  this->energy_last_w_ = watts;
+  this->energy_last_at_ = now;
+  this->energy_started_ = true;
+}
+
+double AeccComponent::energy_charged_kwh() {
+  this->lock_();
+  const double wh = this->energy_.charged_wh;
+  this->unlock_();
+  return wh / 1000.0;
+}
+
+double AeccComponent::energy_discharged_kwh() {
+  this->lock_();
+  const double wh = this->energy_.discharged_wh;
+  this->unlock_();
+  return wh / 1000.0;
 }
 
 void AeccComponent::request_trace() {
@@ -818,6 +850,8 @@ void AeccComponent::bus_task_() {
         w.valid = true;
         w.updated_at = millis();
         w.exceptions = 0;
+        if (due_address == reg::BATTERY_POWER)
+          this->integrate_energy_((int16_t) raw, w.updated_at);
       } else if (refused && ++w.exceptions >= EXCEPTIONS_BEFORE_RETIRING) {
         w.retired = true;
         ESP_LOGE(TAG, "0x%04X is not a valid address on this unit; no longer polling it",
@@ -830,6 +864,19 @@ void AeccComponent::bus_task_() {
 }
 
 void AeccComponent::loop() {
+  // Saved from the main loop rather than the bus task, which the preferences backend is
+  // not safe to be called from.
+  if (millis() - this->energy_saved_at_ >= ENERGY_SAVE_MS) {
+    this->energy_saved_at_ = millis();
+    this->lock_();
+    const EnergyTotals now = this->energy_;
+    this->unlock_();
+    if (now.charged_wh != this->energy_saved_.charged_wh ||
+        now.discharged_wh != this->energy_saved_.discharged_wh) {
+      this->energy_pref_.save(&now);
+      this->energy_saved_ = now;
+    }
+  }
   if (!this->logged_ready_ && !this->watches_.empty()) {
     uint16_t raw;
     if (this->get_register(reg::SOC, &raw)) {

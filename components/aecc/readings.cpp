@@ -16,6 +16,9 @@ void AeccSensor::setup() {
   }
   if (this->metric_ == Metric::REGISTER) {
     this->parent_->add_watch(this->address_, this->interval_);
+  } else if (this->metric_ == Metric::ENERGY_CHARGED || this->metric_ == Metric::ENERGY_DISCHARGED) {
+    // The integration is only as fine as the battery power readings it is fed.
+    this->parent_->add_watch(reg::BATTERY_POWER, 5000);
   } else if (this->parent_->control() == nullptr) {
     ESP_LOGE(TAG, "control diagnostic configured but control: is not");
     this->mark_failed();
@@ -52,6 +55,12 @@ void AeccSensor::publish_metric_() {
       this->rate_loops_ = loops;
       break;
     }
+    case Metric::ENERGY_CHARGED:
+      this->publish_state((float) this->parent_->energy_charged_kwh());
+      break;
+    case Metric::ENERGY_DISCHARGED:
+      this->publish_state((float) this->parent_->energy_discharged_kwh());
+      break;
     case Metric::REGISTER:
       break;
   }

@@ -19,6 +19,8 @@ enum class Metric : uint8_t {
   METER_AGE_S,
   COMMAND_W,
   LOOP_HZ,
+  ENERGY_CHARGED,
+  ENERGY_DISCHARGED,
 };
 
 class AeccSensor : public sensor::Sensor, public Component, public AeccDevice {

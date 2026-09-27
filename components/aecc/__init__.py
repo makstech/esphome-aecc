@@ -291,13 +291,13 @@ def _select(spec):
     )
 
 CONTROL_NUMBERS = {
-    CONF_GRID_TARGET: (_control_number(0, 3000, 10, UNIT_WATT), "GRID_TARGET", "Grid target"),
-    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_DISCHARGE", "Max discharge"),
-    CONF_MAX_CHARGE: (_control_number(0, 2500, 50, UNIT_WATT), "MAX_CHARGE", "Max charge"),
+    CONF_GRID_TARGET: (_control_number(0, 3000, 1, UNIT_WATT), "GRID_TARGET", "Grid target"),
+    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 1, UNIT_WATT), "MAX_DISCHARGE", "Max discharge"),
+    CONF_MAX_CHARGE: (_control_number(0, 2500, 1, UNIT_WATT), "MAX_CHARGE", "Max charge"),
     CONF_MIN_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MIN_SOC", "Reserve"),
     CONF_MAX_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MAX_SOC", "Charge ceiling"),
 }
-RESTING_POWER_NUMBER = _control_number(-2000, -1, 10, UNIT_WATT)
+RESTING_POWER_NUMBER = _control_number(-2000, -1, 1, UNIT_WATT)
 
 
 def _suffixed(specs, suffix, build):

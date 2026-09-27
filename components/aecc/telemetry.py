@@ -6,10 +6,13 @@ Pure data: the hub and the sensor platforms both read this, so it must not impor
 from esphome.const import (
     DEVICE_CLASS_BATTERY,
     DEVICE_CLASS_DURATION,
+    DEVICE_CLASS_ENERGY,
     DEVICE_CLASS_POWER,
     ENTITY_CATEGORY_DIAGNOSTIC,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_HERTZ,
+    UNIT_KILOWATT_HOURS,
     UNIT_PERCENT,
     UNIT_SECOND,
     UNIT_WATT,
@@ -37,9 +40,20 @@ PRESETS = {
     "losses": dict(address=0xFE08, signed=False, name="Losses", **_WATTS),
 }
 
-# Not registers: what the control loop itself is doing. The meter is reached through
-# the controller, so its readings need one too.
+_KWH = dict(
+    unit_of_measurement=UNIT_KILOWATT_HOURS,
+    accuracy_decimals=3,
+    device_class=DEVICE_CLASS_ENERGY,
+    state_class=STATE_CLASS_TOTAL_INCREASING,
+)
+
+# Not registers: computed on the device. The meter is reached through the controller, so
+# its readings need one too.
 DIAGNOSTICS = {
+    "energy_charged": dict(metric="ENERGY_CHARGED", name="Energy charged", interval="30s",
+                           needs=(), **_KWH),
+    "energy_discharged": dict(metric="ENERGY_DISCHARGED", name="Energy discharged",
+                              interval="30s", needs=(), **_KWH),
     "meter_power": dict(metric="GRID_W", name="Meter grid power", interval="5s",
                         needs=("meter", "control"), **_WATTS),
     "meter_power_filtered": dict(

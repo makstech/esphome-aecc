@@ -132,6 +132,8 @@ aecc:
   backup_load_sensor: Backup load
   setpoint_sensor: Setpoint
   losses_sensor: Losses
+  energy_charged_sensor: Energy charged
+  energy_discharged_sensor: Energy discharged
   meter_power_sensor: Meter grid power
   meter_power_filtered_sensor: Meter grid power, filtered
   commanded_power_sensor: Commanded power

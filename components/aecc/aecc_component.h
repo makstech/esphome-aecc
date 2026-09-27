@@ -3,6 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/defines.h"
+#include "esphome/core/preferences.h"
 #if defined(USE_OTA) && defined(USE_OTA_STATE_LISTENER)
 #define AECC_OTA_AWARE
 #include "esphome/components/ota/ota_backend.h"
@@ -79,6 +80,10 @@ class AeccComponent : public Component
   /// Empty until a backup has completed.
   std::string backup_text();
 
+  /// Battery energy in and out, integrated from 0xFE07: the inverter keeps no counter.
+  double energy_charged_kwh();
+  double energy_discharged_kwh();
+
   /// Record what the loop sees, as fast as the two buses allow, for tuning it.
   void request_trace();
   bool trace_running();
@@ -149,6 +154,23 @@ class AeccComponent : public Component
   std::vector<WatchedRegister> watches_;
   std::vector<PendingWrite> writes_;
   bool logged_ready_{false};
+
+  struct EnergyTotals {
+    double charged_wh;
+    double discharged_wh;
+  };
+  /// Caller holds the lock.
+  void integrate_energy_(int16_t watts, uint32_t now);
+  EnergyTotals energy_{0, 0};
+  EnergyTotals energy_saved_{0, 0};
+  int16_t energy_last_w_{0};
+  uint32_t energy_last_at_{0};
+  bool energy_started_{false};
+  uint32_t energy_saved_at_{0};
+  ESPPreferenceObject energy_pref_;
+  /// A longer gap between readings, a stalled bus, is not bridged.
+  static const uint32_t ENERGY_GAP_MS = 60000;
+  static const uint32_t ENERGY_SAVE_MS = 60000;
 
   bool backup_running_{false};
 
