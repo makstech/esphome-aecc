@@ -445,6 +445,7 @@ its default.
 | `uart_id` | required | The bus wired to the inverter's RJ45 pins 7/8 |
 | `unit` | `1` | The inverter's Modbus address |
 | `expose_all_settings` | `false` | Also shows the commissioning settings, see [Battery settings](#-battery-settings) |
+| `expose_tuning` | `false` | Also shows the control loop's tuning controls |
 | `work_mode_select` | `Work mode` | The Work mode dropdown; needs `datalogger:` |
 | `registers` | none | Settings by address, see [Battery settings](#-battery-settings) |
 | `meter`, `control`, `datalogger`, `backup`, `trace` | | The blocks below |
@@ -463,8 +464,8 @@ its default.
 
 | Key | Default | What it does |
 |---|---|---|
-| `rate` | `2Hz` | How often the loop runs; validated on hardware at 2 Hz. Faster rates scale each tick's correction to match |
-| `filter_window` | `1.5s` | The loop acts on the median meter reading over this long |
+| `rate` | `4Hz` | How often the loop runs; the meter refreshes about every 250 ms |
+| `filter_window` | `750ms` | The loop acts on the median meter reading over this long |
 | `grid_target` | `60` | Watts to keep importing in Zero export |
 | `max_discharge` | `600` | Watts, in Zero export and Manual |
 | `max_charge` | `2400` | Watts, in Zero export and Manual |
@@ -472,10 +473,10 @@ its default.
 | `max_soc` | `90%` | The ceiling: no charging above it |
 | `ramp_up` | `0.35` | The share of an import error closed per half second while raising discharge. A move toward export is corrected in full at once |
 | `stale_after` | `5s` | With no meter reading for this long, the loop commands 0 |
-| `law` | `classic` | How the error becomes a command. `classic` adds a share of it to the last command each tick; `predictive` adds it to what a model of the inverter says the battery is delivering, so it does not ask twice for power already on its way |
+| `law` | `predictive` | How the error becomes a command. `classic` adds a share of it to the last command each tick; `predictive` adds it to what a model of the inverter says the battery is delivering, so it does not ask twice for power already on its way |
 | `predictive_gain` | `0.7` | The share of an import error the predictive law corrects per tick; a move toward export is corrected whole |
 | `actuator_lag` | `400ms` | The predictive model: how fast the inverter follows a new setpoint |
-| `meter_delay` | `500ms` | The predictive model: how late the meter shows it |
+| `meter_delay` | `300ms` | The predictive model: how late the meter shows it. Too long double-counts and oscillates |
 | `mode_select` | `Battery mode` | The mode dropdown |
 | `setpoint_number` | `Battery power` | The Manual target in watts, positive discharging |
 | `grid_target_number` | `Grid target` | `grid_target` as a control, starting from the configured value |
@@ -483,8 +484,8 @@ its default.
 | `max_charge_number` | `Max charge` | The same for `max_charge` |
 | `min_soc_number` | `Reserve` | The same for `min_soc` |
 | `max_soc_number` | `Charge ceiling` | The same for `max_soc` |
-| `law_select` | `Control law` | `law` as a dropdown, starting from the configured value |
-| `rate_number` | `Loop rate` | `rate` as a control, for tuning live |
+| `law_select` | `Control law` | `law` as a dropdown, starting from the configured value; shown with `expose_tuning` |
+| `rate_number` | `Loop rate` | `rate` as a control, for tuning live; shown with `expose_tuning` |
 | `filter_window_number` | `Filter window` | The same for `filter_window` |
 | `predictive_gain_number` | `Predictive gain` | The same for `predictive_gain` |
 | `meter_delay_number` | `Meter delay` | The same for `meter_delay` |

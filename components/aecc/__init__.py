@@ -105,6 +105,7 @@ CONF_WORK_MODE_SELECT = "work_mode_select"
 CONF_HOST_TEXT = "host_text"
 CONF_BUTTON = "button"
 CONF_EXPOSE_ALL = "expose_all_settings"
+CONF_EXPOSE_TUNING = "expose_tuning"
 CONF_ENABLE_SWITCH = "enable_switch"
 CONF_MIRROR = "mirror"
 CONF_SIGNED = "signed"
@@ -404,15 +405,16 @@ WORK_MODES = {
 CONTROL_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Controller),
-        cv.Optional(CONF_RATE, default="2Hz"): cv.frequency,
-        cv.Optional(CONF_FILTER_WINDOW, default="1.5s"): cv.positive_time_period_milliseconds,
-        cv.Optional(CONF_LAW, default="classic"): cv.enum(LAWS, lower=True),
+        # The meter refreshes about every 250 ms, so 4 Hz reads each new value once.
+        cv.Optional(CONF_RATE, default="4Hz"): cv.frequency,
+        cv.Optional(CONF_FILTER_WINDOW, default="750ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_LAW, default="predictive"): cv.enum(LAWS, lower=True),
         # The predictive law's share of an import error per tick; export is corrected whole.
         cv.Optional(CONF_PREDICTIVE_GAIN, default=0.7): cv.float_range(min=0.1, max=1.0),
-        # Measured: the inverter follows a step as a ~0.4 s first-order lag, and the meter
-        # shows it ~0.5 s later.
+        # Measured: the inverter follows a step as a ~0.4 s first-order lag. The delay is
+        # tuned, not measured: longer than the real one double-counts and oscillates.
         cv.Optional(CONF_ACTUATOR_LAG, default="400ms"): cv.positive_time_period_milliseconds,
-        cv.Optional(CONF_METER_DELAY, default="500ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_METER_DELAY, default="300ms"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_LAW}_select", default="Control law"): _named(
             select.select_schema(ControlLawSelect).extend(cv.COMPONENT_SCHEMA), "Control law"
         ),
@@ -491,8 +493,22 @@ def _hide_commissioning(config):
     return config
 
 
+def _hide_tuning(config):
+    """The loop's tuning controls stay out of Home Assistant unless asked for; an explicit
+    `internal:` on one still wins."""
+    control = config.get(CONF_CONTROL)
+    if control is None:
+        return config
+    for key in [f"{CONF_LAW}_select"] + [f"{k}_number" for k in TUNING_NUMBERS]:
+        entry = control.get(key)
+        if entry is not None and CONF_INTERNAL not in entry:
+            entry[CONF_INTERNAL] = not config[CONF_EXPOSE_TUNING]
+    return config
+
+
 def _validate(config):
     _hide_commissioning(config)
+    _hide_tuning(config)
 
     if CONF_DATALOGGER in config:
         _in_number_range(config[CONF_DATALOGGER], CONF_RESTING_POWER,
@@ -539,6 +555,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_REGISTERS, default=[]): cv.ensure_list(REGISTER_SCHEMA),
             # Commissioning settings are hidden from Home Assistant by default.
             cv.Optional(CONF_EXPOSE_ALL, default=False): cv.boolean,
+            cv.Optional(CONF_EXPOSE_TUNING, default=False): cv.boolean,
             # The battery's own scheduler mode, which is not on Modbus. Created with the
             # datalogger, because without it Off parks the battery with no way back.
             cv.Optional(CONF_WORK_MODE_SELECT, default="Work mode"): _named(

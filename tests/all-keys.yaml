@@ -36,6 +36,7 @@ aecc:
   uart_id: bus_inverter
   unit: 1
   expose_all_settings: true
+  expose_tuning: false
   backup:
     url: /aecc/backup
     restore_url: /aecc/restore
@@ -60,12 +61,12 @@ aecc:
     register: 12
     reply_window: 120ms
   control:
-    rate: 2Hz
-    filter_window: 1.5s
-    law: classic
+    rate: 4Hz
+    filter_window: 750ms
+    law: predictive
     predictive_gain: 0.7
     actuator_lag: 400ms
-    meter_delay: 500ms
+    meter_delay: 300ms
     grid_target: 60
     max_discharge: 600
     max_charge: 2400
