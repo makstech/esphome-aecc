@@ -74,6 +74,14 @@ void AeccComponent::request_datalogger_host(const std::string &host) {
   this->unlock_();
 }
 
+void AeccComponent::request_resting_power(int32_t watts) {
+  this->lock_();
+  this->resting_w_ = watts;
+  this->resting_pending_ = true;
+  this->resting_tried_at_ = millis() - 5000;
+  this->unlock_();
+}
+
 void AeccComponent::request_work_mode(WorkMode mode) {
   this->lock_();
   this->wanted_work_mode_ = mode;
@@ -760,6 +768,20 @@ void AeccComponent::bus_task_() {
       if (pending) {
         // Someone asked for this, so it is not the loop breaking its silence.
         this->apply_work_mode_();
+        this->feed_wdt_();
+        continue;
+      }
+      this->lock_();
+      const bool resting = this->resting_pending_ && millis() - this->resting_tried_at_ >= 5000;
+      this->unlock_();
+      if (resting) {
+        // Asked for too; retried every few seconds while the datalogger is busy.
+        const bool ok = this->dl_.write({{3003, this->slot_(this->resting_w_)}});
+        this->lock_();
+        this->resting_tried_at_ = millis();
+        if (ok)
+          this->resting_pending_ = false;
+        this->unlock_();
         this->feed_wdt_();
         continue;
       }

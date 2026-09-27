@@ -344,7 +344,7 @@ aecc:
   datalogger:
     host: 192.0.2.10     # the battery's own WiFi module, on your network
     resting_power: -300
-    resting_power_number: Resting power   # optional, to change it from Home Assistant
+    resting_power_number: Resting power   # there by default; name it to relabel
 ```
 
 `host:` also takes a hostname or an mDNS name, so a battery on DHCP does not need a
@@ -507,7 +507,7 @@ its default.
 | `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back; every 5 s until they first hold |
 | `host_text` | `Datalogger address` | Changes the address without reflashing |
 | `enable_switch` | `Datalogger` | Stops all traffic to the datalogger, freeing it for the vendor app |
-| `resting_power_number` | none | `resting_power` as a control; created only when named |
+| `resting_power_number` | `Resting power` | `resting_power` as a control. A change is written to the slot at once, in Off too, since the slot is what the battery runs there |
 
 **`backup:`**
 

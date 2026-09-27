@@ -128,7 +128,12 @@ float AeccNumber::current_() {
 
 void AeccNumber::control(float value) {
   if (this->param_ != ControlParam::NONE) {
-    this->apply_(value);
+    // Restoring at boot goes through apply_(), which writes nothing; a change made here is
+    // written to the slot straight away.
+    if (this->param_ == ControlParam::RESTING_POWER)
+      this->parent_->request_resting_power((int32_t) value);
+    else
+      this->apply_(value);
     if (this->restore_)
       this->pref_.save(&value);
     this->publish_state(value);

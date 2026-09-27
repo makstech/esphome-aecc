@@ -106,6 +106,9 @@ class AeccComponent : public Component
   void set_datalogger_host(const std::string &host) { this->dl_.set_host(host); }
   void set_datalogger_port(uint16_t port) { this->dl_.set_port(port); }
   void set_resting_power(int32_t watts) { this->resting_w_ = watts; }
+  /// A change someone made: written to the slot at once, in Off too, since the slot is
+  /// what the battery runs there.
+  void request_resting_power(int32_t watts);
   int32_t resting_power() const { return this->resting_w_; }
   void set_reconcile_interval(uint32_t ms) { this->reconcile_ms_ = ms; }
   /// True once the EMS has been seen holding the state the control loop needs.
@@ -237,6 +240,8 @@ class AeccComponent : public Component
   bool work_mode_valid_{false};
   WorkMode wanted_work_mode_{WorkMode::CUSTOM};
   bool work_mode_pending_{false};
+  bool resting_pending_{false};
+  uint32_t resting_tried_at_{0};
   std::string wanted_host_;
   bool host_pending_{false};
   std::string ai_charge_, ai_discharge_;
