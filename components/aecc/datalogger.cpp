@@ -40,6 +40,8 @@ static const uint32_t MDNS_MS = 1500;
 static const uint32_t RESOLVE_TTL_MS = 300000;
 static const uint32_t RECV_MS = 1200;
 static const uint32_t TOTAL_MS = 3000;
+// Long enough to carry a read into the write that follows it.
+static const uint32_t LINGER_MS = 2000;
 
 std::string Datalogger::slot(int32_t watts, uint8_t max_soc, uint8_t min_soc) {
   char buf[64];
@@ -117,10 +119,19 @@ bool Datalogger::resolve_(uint32_t *addr) {
   return false;
 }
 
-bool Datalogger::call_(const std::string &request, std::string &reply) {
-  this->reachable_ = false;
-  const uint32_t started = millis();
+void Datalogger::close_() {
+  if (this->fd_ >= 0) {
+    ::close(this->fd_);
+    this->fd_ = -1;
+  }
+}
 
+void Datalogger::release_idle() {
+  if (this->fd_ >= 0 && (!this->configured() || millis() - this->used_at_ > LINGER_MS))
+    this->close_();
+}
+
+bool Datalogger::connect_() {
   const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0)
     return false;
@@ -164,6 +175,16 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
              this->port_, err);
     return false;
   }
+  this->fd_ = fd;
+  return true;
+}
+
+bool Datalogger::call_(const std::string &request, std::string &reply) {
+  this->reachable_ = false;
+  const uint32_t started = millis();
+  if (this->fd_ < 0 && !this->connect_())
+    return false;
+  const int fd = this->fd_;
 
   const std::string line = request + "\n";
   size_t sent = 0;
@@ -178,7 +199,7 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
     }
   }
   if (sent != line.size()) {
-    ::close(fd);
+    this->close_();
     return false;
   }
 
@@ -206,14 +227,15 @@ bool Datalogger::call_(const std::string &request, std::string &reply) {
     if (reply.find('\n') != std::string::npos || reply.size() > 8192)
       break;
   }
-  ::close(fd);
 
   if (reply.empty()) {
+    this->close_();
     // Silence means either another client holds the single slot, or the request envelope
     // was wrong. The two are indistinguishable from here.
     ESP_LOGW(TAG, "no reply; is something else connected to the datalogger?");
     return false;
   }
+  this->used_at_ = millis();
   this->reachable_ = true;
   return true;
 }
@@ -236,8 +258,10 @@ bool Datalogger::read(const std::vector<uint16_t> &addrs, std::map<uint16_t, std
 
   bool found = false;
   auto doc = json::parse_json(reply);
-  if (doc.isNull())
+  if (doc.isNull()) {
+    this->close_();
     return false;
+  }
   JsonObject info = doc["ControlInfo"].as<JsonObject>();
   if (info.isNull())
     return false;
@@ -268,8 +292,10 @@ bool Datalogger::write(const std::map<uint16_t, std::string> &values) {
 
   // The key is present whether the device accepted or refused, so check the value.
   auto doc = json::parse_json(reply);
-  if (doc.isNull())
+  if (doc.isNull()) {
+    this->close_();
     return false;
+  }
   JsonVariant result = doc["SetParameters"];
   if (result.isNull())
     return false;

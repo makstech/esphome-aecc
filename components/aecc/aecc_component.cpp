@@ -522,9 +522,9 @@ void AeccComponent::bus_task_() {
 #ifdef USE_ESP32
     esp_task_wdt_reset();
 #endif
+    this->dl_.release_idle();
     // The control loop is real time; polling and writes fill the gaps between ticks.
-    if (this->control_ != nullptr && this->ports_ok_ &&
-        (!this->dl_.present() || this->ems_ready_ || !this->commanding_())) {
+    if (this->control_ != nullptr && this->ports_ok_) {
       const uint32_t now = millis();
       if ((int32_t) (now - this->next_tick_) >= 0 &&
           this->ticks_since_housekeeping_ < TICKS_BEFORE_HOUSEKEEPING) {
@@ -536,7 +536,8 @@ void AeccComponent::bus_task_() {
           this->next_tick_ = millis() + this->control_->period_ms();
         uint16_t soc = 0;
         const bool soc_valid = this->get_register(reg::SOC, &soc);
-        this->control_->tick(&this->inverter_, soc, soc_valid);
+        const bool may_command = !this->dl_.present() || this->ems_ready_ || !this->commanding_();
+        this->control_->tick(&this->inverter_, soc, soc_valid, may_command);
         continue;
       }
     }

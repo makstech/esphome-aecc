@@ -55,16 +55,20 @@ int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
   return (int16_t) target;
 }
 
-void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
+void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool may_command) {
   this->loops_++;
 
   // Loaded once: the main loop can change it between two reads, and a mode that reads
   // OFF then MANUAL would fall through to the zero-export branch.
-  const ControlMode mode = this->parked_ ? ControlMode::OFF : this->mode_;
+  const ControlMode mode = this->parked_ || !may_command ? ControlMode::OFF : this->mode_;
   if (mode != this->last_mode_) {
     this->last_mode_ = mode;
     this->reset_filter_();
   }
+
+  // Read in every mode, so the meter stays a grid reading while nothing is regulated.
+  float watts;
+  const bool fresh = this->read_meter_(&watts);
 
   if (mode == ControlMode::OFF) {
     this->idle_();
@@ -72,8 +76,6 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
   }
 
   if (mode == ControlMode::MANUAL) {
-    // The meter is not polled here, so its health is unknown rather than whatever it was.
-    this->meter_ok_ = false;
     const int32_t asked = this->manual_w_;
     int32_t lo, hi;
     this->limits_(soc, soc_valid, &lo, &hi);
@@ -90,24 +92,9 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid) {
     return;
   }
 
-  float watts;
-  if (this->meter_ != nullptr && this->meter_->poll(&watts)) {
-    const uint32_t now = millis();
-    if (watts != this->frozen_value_) {
-      this->frozen_value_ = watts;
-      this->frozen_since_ = now;
-      this->frozen_ = false;
-    } else if (now - this->frozen_since_ > FROZEN_AFTER_MS && !this->frozen_) {
-      this->frozen_ = true;
-      ESP_LOGW(TAG, "meter has returned exactly %.1f W for %u s; treating it as dead",
-               watts, (unsigned) ((now - this->frozen_since_) / 1000));
-    }
-    this->last_grid_ = watts;
-    this->meter_ok_ = !this->frozen_;
-    this->filtered_ = this->filter_(watts);
+  if (fresh) {
     this->command_ = this->frozen_ || !this->warm() ? 0 : this->step_(this->filtered_, soc, soc_valid);
   } else {
-    this->meter_ok_ = false;
     const uint32_t age = this->meter_ == nullptr ? UINT32_MAX : this->meter_->age_ms();
     if (age < this->stale_after_ms_)
       return;  // a dropped frame is not a reason to change the command
@@ -128,15 +115,34 @@ void Controller::reset_filter_() {
   this->frozen_ = false;
 }
 
+bool Controller::read_meter_(float *watts) {
+  if (this->meter_ == nullptr || !this->meter_->poll(watts)) {
+    this->meter_ok_ = false;
+    return false;
+  }
+  const uint32_t now = millis();
+  if (*watts != this->frozen_value_) {
+    this->frozen_value_ = *watts;
+    this->frozen_since_ = now;
+    this->frozen_ = false;
+  } else if (now - this->frozen_since_ > FROZEN_AFTER_MS && !this->frozen_) {
+    this->frozen_ = true;
+    ESP_LOGW(TAG, "meter has returned exactly %.1f W for %u s; treating it as dead",
+             *watts, (unsigned) ((now - this->frozen_since_) / 1000));
+  }
+  this->last_grid_ = *watts;
+  this->meter_ok_ = !this->frozen_;
+  this->filtered_ = this->filter_(*watts);
+  return true;
+}
+
 void Controller::idle_() {
   // Go quiet rather than command zero. The inverter falls back to its resting slot a few
   // seconds after the writes stop; a continuous zero is a literal 0 W command and the
   // slot never takes over.
   this->command_ = 0;
-  this->reset_filter_();
-  // Nothing is being regulated, so neither diagnostic can claim health; leaving them at
-  // their last value reads as a working loop.
-  this->meter_ok_ = false;
+  // Nothing is being regulated, so the loop cannot claim health; leaving it at its last
+  // value reads as a working loop.
   this->effective_ = false;
 }
 

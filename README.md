@@ -120,7 +120,8 @@ configured, so a setup without a meter has no meter readings.
 | `meter_ok_sensor` | Meter OK | The meter is answering with fresh readings | `meter:` + `control:` |
 | `ems_ready_sensor` | Scheduler ready | The battery's scheduler is set up for local control | `datalogger:` + `control:` |
 
-Setpoint honoured and Meter OK both go off while the mode is Off.
+Setpoint honoured goes off while the mode is Off. The meter is read in every mode, so it
+doubles as a grid power reading even when nothing is regulated.
 
 To rename or reconfigure one, name its key under `aecc:`:
 
@@ -180,7 +181,7 @@ uart:
     tx_pin: GPIO32
     rx_pin: GPIO33
     baud_rate: 9600
-  - id: bus_meter          # only needed for Zero export
+  - id: bus_meter          # only with a meter
     tx_pin: GPIO25
     rx_pin: GPIO26
     baud_rate: 9600

@@ -72,7 +72,9 @@ class Controller {
   uint8_t max_soc() const { return this->max_soc_; }
 
   uint32_t period_ms() const { return this->period_ms_; }
-  void tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid);
+  // may_command is false while the energy manager is unconfirmed: the meter is still read,
+  // and nothing is written.
+  void tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool may_command);
 
   /// False when the setpoint register stops agreeing with what we command.
   ///
@@ -94,6 +96,7 @@ class Controller {
   /// The state of charge window, as the bounds the command may take.
   void limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi) const;
   /// Commands nothing and forgets everything the loop was carrying.
+  bool read_meter_(float *watts);
   void idle_();
   /// Starts the median filter again. Whatever it holds is from before the mode changed,
   /// and the stamps are outside the window, so one tick would act on a single sample.

@@ -14,6 +14,7 @@ from esphome.const import (
     CONF_ADDRESS,
     CONF_ID,
     CONF_INTERNAL,
+    CONF_MODE,
     CONF_INITIAL_VALUE,
     CONF_MAX_VALUE,
     CONF_MIN_VALUE,
@@ -199,12 +200,13 @@ def _number(spec):
     )
 
 
-def _control_number(lo, hi, step, unit):
+def _control_number(lo, hi, step, unit, mode="AUTO"):
     return _named(
         number.number_schema(AeccNumber, entity_category=ENTITY_CATEGORY_CONFIG,
                              unit_of_measurement=unit)
         .extend(
             {
+                cv.Optional(CONF_MODE, default=mode): cv.enum(number.NUMBER_MODES, upper=True),
                 cv.Optional(CONF_MIN_VALUE, default=lo): cv.float_,
                 cv.Optional(CONF_MAX_VALUE, default=hi): cv.float_,
                 cv.Optional(CONF_STEP, default=step): cv.positive_float,
@@ -377,7 +379,7 @@ CONTROL_SCHEMA = cv.Schema(
             select.select_schema(ControlModeSelect).extend(cv.COMPONENT_SCHEMA)
         ),
         cv.Optional(f"{CONF_SETPOINT}_number", default="Battery power"):
-            _control_number(-2500, 2500, 50, UNIT_WATT),
+            _control_number(-2500, 2500, 1, UNIT_WATT, mode="BOX"),
     }
 ).extend({
     cv.Optional(f"{key}_number", default=spec[2]): spec[0]

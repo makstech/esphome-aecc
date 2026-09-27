@@ -34,6 +34,7 @@ class Datalogger {
     this->host_ = host;
     this->resolved_ = 0;
     this->resolved_at_ = 0;
+    this->close_();
   }
   void set_port(uint16_t port) { this->port_ = port; }
   void set_enabled(bool enabled) { this->enabled_ = enabled; }
@@ -44,6 +45,9 @@ class Datalogger {
   bool reachable() const { return this->reachable_; }
 
   bool read(const std::vector<uint16_t> &addrs, std::map<uint16_t, std::string> &out);
+  /// Closes a connection once it has sat idle, or at once while switched off, so the
+  /// single client slot is free for the vendor app or integration. Bus task only.
+  void release_idle();
   bool write(const std::map<uint16_t, std::string> &values);
 
   /// The resting state a dead controller leaves behind. Negative charges, and charging
@@ -51,9 +55,12 @@ class Datalogger {
   static std::string slot(int32_t watts, uint8_t max_soc, uint8_t min_soc);
 
  protected:
-  /// Reconnects per call: holding the socket would lock everything else out of the single
-  /// client slot, and per-call connection was measured to work for writes as well as reads.
+  /// Reuses the socket for calls that follow each other closely: the datalogger ignores a
+  /// connection opened just after the previous one closed, so a read then a write on fresh
+  /// sockets loses the write.
   bool call_(const std::string &request, std::string &reply);
+  bool connect_();
+  void close_();
   /// The host as an IPv4 address, resolving it if it is a name. Cached, because every
   /// call would otherwise pay for a lookup, and re-resolved only after a failure so a
   /// battery that moves on DHCP is still found.
@@ -66,6 +73,8 @@ class Datalogger {
   volatile bool enabled_{true};
   uint32_t resolved_{0};
   uint32_t resolved_at_{0};
+  int fd_{-1};
+  uint32_t used_at_{0};
 };
 
 }  // namespace aecc
