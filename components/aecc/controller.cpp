@@ -146,8 +146,19 @@ void Controller::idle_() {
   this->effective_ = false;
 }
 
+bool Controller::redeliver(ModbusRtu *inverter) {
+  if (this->parked_ || this->last_mode_ == ControlMode::OFF ||
+      millis() - this->delivered_at_ < REDELIVER_MS)
+    return false;
+  // A failed frame waits its turn like a good one; the tick deals with a bus that stays down.
+  inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
+  this->delivered_at_ = millis();
+  return true;
+}
+
 void Controller::deliver_(ModbusRtu *inverter) {
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
+  this->delivered_at_ = millis();
   if (!wrote) {
     // Do not keep integrating against a command the inverter never received, or the
     // error accumulates to the cap and lands all at once when the bus comes back.

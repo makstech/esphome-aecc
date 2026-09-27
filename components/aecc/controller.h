@@ -76,6 +76,9 @@ class Controller {
   // may_command is false while the energy manager is unconfirmed: the meter is still read,
   // and nothing is written.
   void tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool may_command);
+  /// Rewrites the last command between ticks. The datalogger pushes its schedule slot into
+  /// the setpoint register every few seconds; this bounds how long a push stands.
+  bool redeliver(ModbusRtu *inverter);
 
   /// False when the setpoint register stops agreeing with what we command.
   ///
@@ -155,6 +158,8 @@ class Controller {
   uint32_t loops_{0};
 
   static const uint32_t READBACK_EVERY_MS = 5000;
+  static const uint32_t REDELIVER_MS = 100;
+  uint32_t delivered_at_{0};
   /// The datalogger re-asserts its own value every 2-3 s, so a single disagreement is
   /// expected; only a run of them means the writes are not landing.
   static const uint8_t MISMATCHES_BEFORE_ALARM = 3;

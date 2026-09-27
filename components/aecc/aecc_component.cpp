@@ -539,28 +539,6 @@ std::string AeccComponent::slot_(int32_t watts) const {
   return Datalogger::slot(watts, max_soc, min_soc);
 }
 
-int32_t AeccComponent::slot_for_command_() const {
-  const int32_t command = this->control_ == nullptr ? 0 : this->control_->command();
-  // Charging cannot export, so it is carried in full. Discharge only up to the limit: the
-  // slot is what a dead controller leaves running.
-  if (command < 0)
-    return command;
-  if (command > 0 && this->slot_limit_w_ > 0)
-    return std::min(command, this->slot_limit_w_);
-  return this->resting_w_;
-}
-
-bool AeccComponent::carry_slot_() {
-  const int32_t want = this->slot_for_command_();
-  const int32_t diff = want - this->carried_w_;
-  if ((diff < CARRY_STEP_W && diff > -CARRY_STEP_W) || millis() - this->carried_at_ < CARRY_EVERY_MS)
-    return false;
-  if (this->dl_.write({{3003, this->slot_(want)}}))
-    this->carried_w_ = want;
-  this->carried_at_ = millis();
-  return true;
-}
-
 void AeccComponent::reconcile_() {
   // 0xFE16 only modulates a command the energy manager is already running, so these are
   // what make the control loop work at all. The vendor app's AI mode rewrites them
@@ -580,7 +558,9 @@ void AeccComponent::reconcile_() {
     return;
   }
 
-  const std::string slot = this->slot_(this->carried_w_);
+  // Fixed rather than following the command: it is what a dead controller leaves running,
+  // and negative means charging, which cannot export.
+  const std::string slot = this->slot_(this->resting_w_);
 
   std::map<uint16_t, std::string> fix;
   // 3026 positive exports unconditionally, regardless of house load, and the app's AI
@@ -618,7 +598,6 @@ void AeccComponent::bus_task_() {
 #endif
   this->check_ports_();
   this->feed_wdt_();
-  this->carried_w_ = this->resting_w_;
   if (this->dl_.configured() && this->commanding_()) {
     this->was_commanding_ = true;
     // Until this has run the schedule slot is whatever the app last left, which may be a
@@ -650,6 +629,8 @@ void AeccComponent::bus_task_() {
         this->control_->tick(&this->inverter_, soc, soc_valid, may_command);
         continue;
       }
+      if (this->control_->redeliver(&this->inverter_))
+        continue;
     }
 
 #ifdef AECC_OTA_AWARE
@@ -684,13 +665,13 @@ void AeccComponent::bus_task_() {
     }
 #endif
 
-    // Ahead of housekeeping, which only gets the gaps while a trace records.
+    this->ticks_since_housekeeping_ = 0;
+
+    // A trace takes the housekeeping turn while it records; the rest only gets the gaps.
     if (this->trace_running_ && this->ports_ok_ && (int32_t) (millis() - this->trace_next_) >= 0) {
       this->trace_step_();
       continue;
     }
-
-    this->ticks_since_housekeeping_ = 0;
 
     if (this->backup_running_) {
       this->backup_step_();
@@ -707,20 +688,6 @@ void AeccComponent::bus_task_() {
       this->was_commanding_ = false;
       // Whatever the EMS holds now is no longer this component's doing.
       this->ems_ready_ = false;
-      // A carried discharge must not outlive the mode, so hand back on the resting slot,
-      // at once: another controller may be about to write its own.
-      this->restore_slot_ = this->carried_w_ != this->resting_w_;
-      this->carried_at_ = millis() - CARRY_EVERY_MS;
-    }
-    if (!commanding && this->restore_slot_ && this->dl_.configured() &&
-        millis() - this->carried_at_ >= CARRY_EVERY_MS) {
-      if (this->dl_.write({{3003, this->slot_(this->resting_w_)}})) {
-        this->carried_w_ = this->resting_w_;
-        this->restore_slot_ = false;
-      }
-      this->carried_at_ = millis();
-      this->feed_wdt_();
-      continue;
     }
 
     this->lock_();
@@ -763,17 +730,9 @@ void AeccComponent::bus_task_() {
         (!this->was_commanding_ || millis() - this->reconciled_at_ > this->reconcile_ms_)) {
       // Leaving Off reconciles at once rather than waiting out the interval, or the
       // chosen mode does nothing until it elapses.
-      if (!this->was_commanding_) {
-        this->carried_w_ = this->resting_w_;
-        this->restore_slot_ = false;
-      }
       this->was_commanding_ = true;
       this->reconciled_at_ = millis();
       this->reconcile_();
-      continue;
-    }
-    if (this->dl_.configured() && commanding && this->ems_ready_ && this->carry_slot_()) {
-      this->feed_wdt_();
       continue;
     }
 

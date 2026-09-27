@@ -49,7 +49,6 @@ aecc:
     host: 192.0.2.10
     port: 8080
     resting_power: -300
-    slot_discharge_limit: 0
     reconcile_interval: 60s
     host_text: Battery address
     enable_switch: Datalogger link

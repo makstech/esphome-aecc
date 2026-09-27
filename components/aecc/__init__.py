@@ -91,7 +91,6 @@ CONF_INTERVAL = "interval"
 CONF_SCALE = "scale"
 CONF_REGISTERS = "registers"
 CONF_RESTING_POWER = "resting_power"
-CONF_SLOT_DISCHARGE_LIMIT = "slot_discharge_limit"
 CONF_RECONCILE_INTERVAL = "reconcile_interval"
 CONF_URL = "url"
 CONF_RESTORE_ID = "restore_id"
@@ -335,9 +334,6 @@ DATALOGGER_SCHEMA = cv.Schema(
         # Negative charges. This is the state a dead controller leaves the unit in, and
         # charging cannot export at any load or state of charge.
         cv.Optional(CONF_RESTING_POWER, default=-300): cv.int_range(min=-20000, max=-1),
-        # Keep it under the lowest draw on the battery's phase: a dead controller can leave
-        # the slot discharging this much.
-        cv.Optional(CONF_SLOT_DISCHARGE_LIMIT, default=0): cv.int_range(min=0, max=20000),
         cv.Optional(CONF_RECONCILE_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_RESTING_POWER}_number"): RESTING_POWER_NUMBER,
         # Changing the address without reflashing, for a battery that moves on DHCP.
@@ -645,7 +641,6 @@ async def to_code(config):
         cg.add(var.set_datalogger_host(str(conf[CONF_HOST])))
         cg.add(var.set_datalogger_port(conf[CONF_PORT]))
         cg.add(var.set_resting_power(conf[CONF_RESTING_POWER]))
-        cg.add(var.set_slot_discharge_limit(conf[CONF_SLOT_DISCHARGE_LIMIT]))
         cg.add(var.set_reconcile_interval(conf[CONF_RECONCILE_INTERVAL]))
         entry = conf.get(CONF_HOST_TEXT)
         if entry is not None:

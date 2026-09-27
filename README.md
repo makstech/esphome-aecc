@@ -375,11 +375,9 @@ A small charging value is the quietest non-zero option, and charging can never p
 anything into the grid. If you want the battery to do as close to nothing as possible when
 the ESP32 stops, use something small like `-10` rather than looking for a zero.
 
-While the loop runs, the slot follows its command, because the datalogger pushes the slot's
-value back into the battery every few seconds and a slot that disagrees shows up as a jolt
-on the meter. Charging is followed in full. Discharge is followed only up to
-`slot_discharge_limit`, since the slot is what the battery keeps doing if the ESP32 dies;
-above the limit the jolts come back, smaller. Leaving the mode puts `resting_power` back.
+The datalogger also pushes that value into the battery every few seconds, over whatever
+the ESP32 last commanded. So between control ticks the ESP32 rewrites its setpoint every
+100 ms, and a push stands for no longer than that.
 
 The **Setpoint honoured** sensor turns off if the battery stops obeying. Put it on a
 dashboard or an automation to know when that happens. It reports on the control loop, so
@@ -487,8 +485,7 @@ its default.
 |---|---|---|
 | `host` | empty | Address, hostname or mDNS name of the battery's WiFi module. Empty leaves it to the text entity |
 | `port` | `8080` | Its TCP port |
-| `resting_power` | `-300` | Watts the schedule slot holds when it carries nothing else. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
-| `slot_discharge_limit` | `0` | The most discharge the slot may carry, and so the most a dead controller can leave running. Keep it below the lowest draw on the battery's phase; `0` never carries discharge |
+| `resting_power` | `-300` | Watts the schedule slot holds, which the battery falls back to when the loop stops. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
 | `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back |
 | `host_text` | `Datalogger address` | Changes the address without reflashing |
 | `enable_switch` | `Datalogger` | Stops all traffic to the datalogger, freeing it for the vendor app |
