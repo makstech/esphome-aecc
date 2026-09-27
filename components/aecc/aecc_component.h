@@ -93,6 +93,7 @@ class AeccComponent : public Component
   void set_datalogger_host(const std::string &host) { this->dl_.set_host(host); }
   void set_datalogger_port(uint16_t port) { this->dl_.set_port(port); }
   void set_resting_power(int32_t watts) { this->resting_w_ = watts; }
+  void set_slot_discharge_limit(int32_t watts) { this->slot_limit_w_ = watts; }
   int32_t resting_power() const { return this->resting_w_; }
   void set_reconcile_interval(uint32_t ms) { this->reconcile_ms_ = ms; }
   /// True once the EMS has been seen holding the state the control loop needs.
@@ -163,6 +164,9 @@ class AeccComponent : public Component
   std::string restore_report_;
   std::map<uint16_t, std::string> restore_ems_;
   void reconcile_();
+  std::string slot_(int32_t watts) const;
+  int32_t slot_for_command_() const;
+  bool carry_slot_();
   /// Reads the scheduler mode without writing anything.
   void observe_ems_();
   /// Applies a queued work mode. Switching away from self-consumption remembers the two
@@ -178,8 +182,18 @@ class AeccComponent : public Component
   bool ota_parked_{false};
 
   Datalogger dl_;
-  /// Negative: a dead controller must be left charging, never discharging.
+  /// Negative. What the slot holds whenever it carries nothing else.
   int32_t resting_w_{-300};
+  /// The slot power last written; reconcile_() puts back this, not resting_w_.
+  int32_t carried_w_{-300};
+  uint32_t carried_at_{0};
+  bool restore_slot_{false};
+  /// The most discharge the slot may carry; 0 keeps a discharging slot at resting_w_.
+  int32_t slot_limit_w_{0};
+  /// The datalogger re-pushes the slot into 0xFE16 every ~11 s, so a slot that follows
+  /// the command within a few seconds and a few tens of watts keeps the pushes harmless.
+  static const int32_t CARRY_STEP_W = 50;
+  static const uint32_t CARRY_EVERY_MS = 5000;
   uint32_t reconcile_ms_{60000};
   uint32_t reconciled_at_{0};
   bool ems_ready_{false};

@@ -15,6 +15,7 @@ from esphome.const import (
     CONF_ID,
     CONF_INTERNAL,
     CONF_MODE,
+    CONF_UNIT_OF_MEASUREMENT,
     CONF_INITIAL_VALUE,
     CONF_MAX_VALUE,
     CONF_MIN_VALUE,
@@ -86,6 +87,7 @@ CONF_INTERVAL = "interval"
 CONF_SCALE = "scale"
 CONF_REGISTERS = "registers"
 CONF_RESTING_POWER = "resting_power"
+CONF_SLOT_DISCHARGE_LIMIT = "slot_discharge_limit"
 CONF_RECONCILE_INTERVAL = "reconcile_interval"
 CONF_URL = "url"
 CONF_RESTORE_ID = "restore_id"
@@ -177,6 +179,17 @@ def _fits_register(conf):
     return conf
 
 
+_NUMBER_MODE = cv.enum(number.NUMBER_MODES, upper=True)
+
+
+def _touch_safe(conf):
+    """A slider only for percentages: a scroll that catches one moves the battery."""
+    if CONF_MODE not in conf:
+        percent = conf.get(CONF_UNIT_OF_MEASUREMENT) == UNIT_PERCENT
+        conf[CONF_MODE] = _NUMBER_MODE("AUTO" if percent else "BOX")
+    return conf
+
+
 def _number(spec):
     """A battery setting, defaulted from settings.py so that naming it is enough."""
     fields = {k: v for k, v in spec.items() if k in ("unit_of_measurement", "device_class")}
@@ -184,6 +197,7 @@ def _number(spec):
         number.number_schema(AeccNumber, entity_category=ENTITY_CATEGORY_CONFIG, **fields)
         .extend(
             {
+                cv.Optional(CONF_MODE): _NUMBER_MODE,
                 cv.Optional(CONF_MIN_VALUE, default=spec["min_value"]): cv.float_,
                 cv.Optional(CONF_MAX_VALUE, default=spec["max_value"]): cv.float_,
                 cv.Optional(CONF_STEP, default=spec["step"]): cv.positive_float,
@@ -195,18 +209,19 @@ def _number(spec):
             }
         )
         .extend(cv.COMPONENT_SCHEMA)
-        .add_extra(_fits_register),
+        .add_extra(_fits_register)
+        .add_extra(_touch_safe),
         spec["name"],
     )
 
 
-def _control_number(lo, hi, step, unit, mode="AUTO"):
+def _control_number(lo, hi, step, unit):
     return _named(
         number.number_schema(AeccNumber, entity_category=ENTITY_CATEGORY_CONFIG,
                              unit_of_measurement=unit)
         .extend(
             {
-                cv.Optional(CONF_MODE, default=mode): cv.enum(number.NUMBER_MODES, upper=True),
+                cv.Optional(CONF_MODE): _NUMBER_MODE,
                 cv.Optional(CONF_MIN_VALUE, default=lo): cv.float_,
                 cv.Optional(CONF_MAX_VALUE, default=hi): cv.float_,
                 cv.Optional(CONF_STEP, default=step): cv.positive_float,
@@ -215,6 +230,7 @@ def _control_number(lo, hi, step, unit, mode="AUTO"):
             }
         )
         .extend(cv.COMPONENT_SCHEMA)
+        .add_extra(_touch_safe)
     )
 
 
@@ -223,6 +239,7 @@ REGISTER_SCHEMA = (
     .extend(
         {
             cv.Required(CONF_ADDRESS): cv.hex_uint16_t,
+            cv.Optional(CONF_MODE): _NUMBER_MODE,
             cv.Optional(CONF_MIN_VALUE, default=0): cv.float_,
             cv.Optional(CONF_MAX_VALUE, default=65535): cv.float_,
             cv.Optional(CONF_STEP, default=1): cv.positive_float,
@@ -234,6 +251,7 @@ REGISTER_SCHEMA = (
     )
     .extend(cv.COMPONENT_SCHEMA)
     .add_extra(_fits_register)
+    .add_extra(_touch_safe)
 )
 
 
@@ -313,6 +331,9 @@ DATALOGGER_SCHEMA = cv.Schema(
         # Negative charges. This is the state a dead controller leaves the unit in, and
         # charging cannot export at any load or state of charge.
         cv.Optional(CONF_RESTING_POWER, default=-300): cv.int_range(min=-20000, max=-1),
+        # Keep it under the lowest draw on the battery's phase: a dead controller can leave
+        # the slot discharging this much.
+        cv.Optional(CONF_SLOT_DISCHARGE_LIMIT, default=0): cv.int_range(min=0, max=20000),
         cv.Optional(CONF_RECONCILE_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_RESTING_POWER}_number"): RESTING_POWER_NUMBER,
         # Changing the address without reflashing, for a battery that moves on DHCP.
@@ -379,7 +400,7 @@ CONTROL_SCHEMA = cv.Schema(
             select.select_schema(ControlModeSelect).extend(cv.COMPONENT_SCHEMA)
         ),
         cv.Optional(f"{CONF_SETPOINT}_number", default="Battery power"):
-            _control_number(-2500, 2500, 1, UNIT_WATT, mode="BOX"),
+            _control_number(-2500, 2500, 1, UNIT_WATT),
     }
 ).extend({
     cv.Optional(f"{key}_number", default=spec[2]): spec[0]
@@ -601,6 +622,7 @@ async def to_code(config):
         cg.add(var.set_datalogger_host(str(conf[CONF_HOST])))
         cg.add(var.set_datalogger_port(conf[CONF_PORT]))
         cg.add(var.set_resting_power(conf[CONF_RESTING_POWER]))
+        cg.add(var.set_slot_discharge_limit(conf[CONF_SLOT_DISCHARGE_LIMIT]))
         cg.add(var.set_reconcile_interval(conf[CONF_RECONCILE_INTERVAL]))
         entry = conf.get(CONF_HOST_TEXT)
         if entry is not None:

@@ -133,8 +133,9 @@ aecc:
     interval: 30s
 ```
 
-[`tests/all-keys.yaml`](tests/all-keys.yaml) is generated from the component and names
-every key it accepts, so it is the exhaustive list if this one has drifted.
+[`tests/all-keys.yaml`](tests/all-keys.yaml) is generated from the component's schema and
+names every key it accepts. CI fails when the schema gains a key that it, or this README,
+does not name; the options outside these tables are in [All options](#-all-options).
 
 **Battery settings** — also under `aecc:`, see [below](#-battery-settings)
 
@@ -374,6 +375,12 @@ A small charging value is the quietest non-zero option, and charging can never p
 anything into the grid. If you want the battery to do as close to nothing as possible when
 the ESP32 stops, use something small like `-10` rather than looking for a zero.
 
+While the loop runs, the slot follows its command, because the datalogger pushes the slot's
+value back into the battery every few seconds and a slot that disagrees shows up as a jolt
+on the meter. Charging is followed in full. Discharge is followed only up to
+`slot_discharge_limit`, since the slot is what the battery keeps doing if the ESP32 dies;
+above the limit the jolts come back, smaller. Leaving the mode puts `resting_power` back.
+
 The **Setpoint honoured** sensor turns off if the battery stops obeying. Put it on a
 dashboard or an automation to know when that happens. It reports on the control loop, so
 it needs `control:` as well.
@@ -409,6 +416,77 @@ curl -X POST -d '' http://your-node.local/aecc/restore     # for the report
 Restore writes the settings and the energy manager's own values, skips anything already
 correct, and stops if the battery starts refusing. It does not switch the battery on, so
 on a completely blank unit that last step is still yours.
+
+## 📋 All options
+
+Everything the component accepts besides the entity tables and the battery settings, with
+its default.
+
+**`aecc:`**
+
+| Key | Default | What it does |
+|---|---|---|
+| `uart_id` | required | The bus wired to the inverter's RJ45 pins 7/8 |
+| `unit` | `1` | The inverter's Modbus address |
+| `expose_all_settings` | `false` | Also shows the commissioning settings, see [Battery settings](#-battery-settings) |
+| `work_mode_select` | `Work mode` | The Work mode dropdown; needs `datalogger:` |
+| `registers` | none | Settings by address, see [Battery settings](#-battery-settings) |
+| `meter`, `control`, `datalogger`, `backup` | | The blocks below |
+
+**`meter:`** — without it there is no Zero export
+
+| Key | Default | What it does |
+|---|---|---|
+| `type` | required | `rs071`, the CT meter that came in the box |
+| `uart_id` | required | The meter's own bus |
+| `unit` | `1` | The meter's Modbus address |
+| `register` | `12` | The float32 register holding grid power, positive when importing |
+| `reply_window` | `120ms` | How long to wait for an answer, up to 1 s |
+
+**`control:`**
+
+| Key | Default | What it does |
+|---|---|---|
+| `rate` | `2Hz` | How often the loop runs; validated on hardware at 2 Hz. Faster rates scale each tick's correction to match |
+| `filter_window` | `1.5s` | The loop acts on the median meter reading over this long |
+| `grid_target` | `60` | Watts to keep importing in Zero export |
+| `max_discharge` | `600` | Watts, in Zero export and Manual |
+| `max_charge` | `2400` | Watts, in Zero export and Manual |
+| `min_soc` | `15%` | The reserve: no discharging below it |
+| `max_soc` | `90%` | The ceiling: no charging above it |
+| `ramp_up` | `0.35` | The share of an import error closed per half second while raising discharge. A move toward export is corrected in full at once |
+| `stale_after` | `5s` | With no meter reading for this long, the loop commands 0 |
+| `mode_select` | `Battery mode` | The mode dropdown |
+| `setpoint_number` | `Battery power` | The Manual target in watts, positive discharging |
+| `grid_target_number` | `Grid target` | `grid_target` as a control, starting from the configured value |
+| `max_discharge_number` | `Max discharge` | The same for `max_discharge` |
+| `max_charge_number` | `Max charge` | The same for `max_charge` |
+| `min_soc_number` | `Reserve` | The same for `min_soc` |
+| `max_soc_number` | `Charge ceiling` | The same for `max_soc` |
+
+**`datalogger:`**
+
+| Key | Default | What it does |
+|---|---|---|
+| `host` | empty | Address, hostname or mDNS name of the battery's WiFi module. Empty leaves it to the text entity |
+| `port` | `8080` | Its TCP port |
+| `resting_power` | `-300` | Watts the schedule slot holds when it carries nothing else. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
+| `slot_discharge_limit` | `0` | The most discharge the slot may carry, and so the most a dead controller can leave running. Keep it below the lowest draw on the battery's phase; `0` never carries discharge |
+| `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back |
+| `host_text` | `Datalogger address` | Changes the address without reflashing |
+| `enable_switch` | `Datalogger` | Stops all traffic to the datalogger, freeing it for the vendor app |
+| `resting_power_number` | none | `resting_power` as a control; created only when named |
+
+**`backup:`**
+
+| Key | Default | What it does |
+|---|---|---|
+| `url` | `/aecc/backup` | Where the backup is served |
+| `restore_url` | `/aecc/restore` | Where a backup is posted to restore it |
+| `button` | `Back up configuration` | Takes a backup |
+
+Numbers show as a number box unless their unit is a percentage; set `mode:` on one to
+override.
 
 ## 📖 More
 

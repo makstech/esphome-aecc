@@ -42,7 +42,7 @@ void Controller::limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi)
 
 int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
   const float error = grid_w - (float) this->grid_target_;
-  const float delta = error < 0 ? error : error * this->ramp_per_tick_;
+  const float delta = error * (error < 0 ? this->ease_per_tick_ : this->ramp_per_tick_);
   float target = (float) this->command_ + delta;
 
   int32_t lo, hi;

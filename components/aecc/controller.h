@@ -3,6 +3,7 @@
 #include "meter.h"
 #include "modbus_rtu.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -103,13 +104,14 @@ class Controller {
   void reset_filter_();
   /// Writes command_ and, occasionally, checks the inverter is acting on it.
   void deliver_(ModbusRtu *inverter);
-  /// ramp_up is the fraction of the error applied per tick at the rate it was validated
-  /// at. Applying it per tick regardless of rate would make a faster loop ramp harder in
-  /// the one direction that can export, so it is rescaled to hold the per-second
-  /// response constant.
+  /// Corrections are sized for the rate the law was validated at. The inverter takes about
+  /// a second to respond, so until it does a faster loop sees the same error on every tick;
+  /// scaling each tick's share by its length keeps the correction per second the same in
+  /// both directions.
   void recompute_ramp_() {
-    const float ticks = (float) this->period_ms_ / (float) VALIDATED_PERIOD_MS;
-    this->ramp_per_tick_ = 1.0f - powf(1.0f - this->ramp_up_, ticks);
+    const float share = (float) this->period_ms_ / (float) VALIDATED_PERIOD_MS;
+    this->ramp_per_tick_ = std::min(1.0f, this->ramp_up_ * share);
+    this->ease_per_tick_ = std::min(1.0f, share);
   }
   /// Median, not mean: the meter swings tens of watts at steady state and a mean lets a
   /// single spike move the setpoint. The window is in seconds so that changing the loop
@@ -125,6 +127,8 @@ class Controller {
   uint32_t stale_after_ms_{5000};
   float ramp_up_{0.35f};
   float ramp_per_tick_{0.35f};
+  /// The share of an excess-discharge error removed per tick; the whole of it at 2 Hz.
+  float ease_per_tick_{1.0f};
   uint8_t min_soc_{15};
   uint8_t max_soc_{90};
 
