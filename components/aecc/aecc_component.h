@@ -229,7 +229,7 @@ class AeccComponent : public Component
 
   Datalogger dl_;
   /// Negative: a dead controller must be left charging, never discharging.
-  int32_t resting_w_{-300};
+  int32_t resting_w_{-50};
   uint32_t reconcile_ms_{60000};
   /// Until the scheduler is confirmed, e.g. while WiFi is still coming up after boot.
   static const uint32_t RECONCILE_RETRY_MS = 5000;

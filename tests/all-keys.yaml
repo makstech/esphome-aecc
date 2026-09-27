@@ -49,7 +49,7 @@ aecc:
   datalogger:
     host: 192.0.2.10
     port: 8080
-    resting_power: -300
+    resting_power: -50
     reconcile_interval: 60s
     host_text: Battery address
     enable_switch: Datalogger link

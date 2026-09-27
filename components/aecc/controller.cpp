@@ -77,6 +77,8 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     this->last_mode_ = mode;
     this->reset_filter_();
     std::fill(this->modelled_, this->modelled_ + MAX_DELAY_TICKS, 0.0f);
+    // Whatever the register holds from before is not a push.
+    this->guard_agreed_ = false;
   }
 
   // Read in every mode, so the meter stays a grid reading while nothing is regulated.
@@ -167,6 +169,15 @@ void Controller::idle_() {
   this->effective_ = false;
 }
 
+void Controller::note_readback_(int16_t read) {
+  const bool agrees = read == this->written_;
+  if (!agrees && this->guard_agreed_) {
+    this->pushed_ = true;
+    this->pushed_at_ = millis();
+  }
+  this->guard_agreed_ = agrees;
+}
+
 bool Controller::guard(ModbusRtu *inverter) {
   if (this->parked_ || this->last_mode_ == ControlMode::OFF ||
       millis() - this->guarded_at_ < GUARD_EVERY_MS)
@@ -175,20 +186,20 @@ bool Controller::guard(ModbusRtu *inverter) {
   uint16_t raw;
   if (!inverter->read_one(reg::SETPOINT, &raw, 1))
     return true;
-  const bool agrees = (int16_t) raw == this->command_;
-  if (!agrees) {
-    inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
-    if (this->guard_agreed_) {
-      this->pushed_ = true;
-      this->pushed_at_ = millis();
-    }
-  }
-  this->guard_agreed_ = agrees;
+  this->note_readback_((int16_t) raw);
+  if ((int16_t) raw != this->command_ && inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1))
+    this->written_ = this->command_;
   return true;
 }
 
 void Controller::deliver_(ModbusRtu *inverter) {
+  // Read before writing: a push this write covered up unseen would pass for load.
+  uint16_t before;
+  if (inverter->read_one(reg::SETPOINT, &before, 1))
+    this->note_readback_((int16_t) before);
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
+  if (wrote)
+    this->written_ = this->command_;
   this->guarded_at_ = millis();
   // Advanced whichever law is running, so switching to the predictive one starts from a
   // model that already knows what was commanded.

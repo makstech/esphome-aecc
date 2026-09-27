@@ -163,7 +163,8 @@ across reboots:
 Off is the default, and it is genuinely off: the component stops reasserting the battery's
 own scheduler too, so it will not fight you while you drive the battery some other way.
 Zero export only appears in the list once you have given the component a `meter:`; Manual
-is there from the start, driven by the **Battery power** setpoint.
+is there from the start, driven by the **Battery power** setpoint. Manual at 0 W parks the
+battery idle while the ESP32 stays in control.
 
 ### Handing the battery back
 
@@ -175,7 +176,7 @@ self-consumption automation. Name it with `work_mode_select:` to change the labe
 | Battery mode | Work mode | What runs the battery |
 |---|---|---|
 | Off | Self-consumption | The battery's own automation |
-| Off | Custom | Nothing; it idles on the resting slot |
+| Off | Custom | Nothing; it holds the resting slot, a slow charge |
 | Zero export or Manual | Custom | This component |
 
 Self-consumption can only be selected while the battery mode is Off, because the other two
@@ -343,7 +344,7 @@ handles this for you, checking every minute and putting it back if it drifts:
 aecc:
   datalogger:
     host: 192.0.2.10     # the battery's own WiFi module, on your network
-    resting_power: -300
+    resting_power: -50
     resting_power_number: Resting power   # there by default; name it to relabel
 ```
 
@@ -379,8 +380,9 @@ That same value is also what the battery falls back to a few seconds after the E
 quiet. So one number does two jobs, and zero breaks both of them.
 
 A small charging value is the quietest non-zero option, and charging can never push
-anything into the grid. If you want the battery to do as close to nothing as possible when
-the ESP32 stops, use something small like `-10` rather than looking for a zero.
+anything into the grid. Too small counts as zero, though: the battery treats `-10` as
+nothing at all. The default `-50` is about the smallest it listens to. To park the battery
+idle, use Manual at 0 W rather than a smaller resting value.
 
 The datalogger also pushes that value into the battery every few seconds, over whatever
 the ESP32 last commanded. So between control ticks the ESP32 checks its setpoint every
@@ -503,7 +505,7 @@ its default.
 |---|---|---|
 | `host` | empty | Address, hostname or mDNS name of the battery's WiFi module. Empty leaves it to the text entity |
 | `port` | `8080` | Its TCP port |
-| `resting_power` | `-300` | Watts the schedule slot holds, which the battery falls back to when the loop stops. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
+| `resting_power` | `-50` | Watts the schedule slot holds, which the battery falls back to when the loop stops. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
 | `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back; every 5 s until they first hold |
 | `host_text` | `Datalogger address` | Changes the address without reflashing |
 | `enable_switch` | `Datalogger` | Stops all traffic to the datalogger, freeing it for the vendor app |

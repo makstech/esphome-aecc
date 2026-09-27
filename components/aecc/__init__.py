@@ -338,7 +338,7 @@ DATALOGGER_SCHEMA = cv.Schema(
         cv.Optional(CONF_PORT, default=8080): cv.port,
         # Negative charges. This is the state a dead controller leaves the unit in, and
         # charging cannot export at any load or state of charge.
-        cv.Optional(CONF_RESTING_POWER, default=-300): cv.int_range(min=-20000, max=-1),
+        cv.Optional(CONF_RESTING_POWER, default=-50): cv.int_range(min=-20000, max=-1),
         cv.Optional(CONF_RECONCILE_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_RESTING_POWER}_number", default="Resting power"): RESTING_POWER_NUMBER,
         # Changing the address without reflashing, for a battery that moves on DHCP.

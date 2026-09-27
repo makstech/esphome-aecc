@@ -211,7 +211,10 @@ class Controller {
   bool pushed_{false};
   /// A push is a disagreement after an agreement. One that persists is the inverter not
   /// taking the setpoint at all, which must not hold the loop still.
-  bool guard_agreed_{true};
+  bool guard_agreed_{false};
+  /// The value last written to the setpoint register; any other reading is someone else's.
+  int16_t written_{0};
+  void note_readback_(int16_t read);
   bool masked_() const { return this->pushed_ && millis() - this->pushed_at_ < PUSH_MASK_MS; }
   /// The datalogger re-asserts its own value every 2-3 s, so a single disagreement is
   /// expected; only a run of them means the writes are not landing.
