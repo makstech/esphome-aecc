@@ -486,7 +486,7 @@ its default.
 | `host` | empty | Address, hostname or mDNS name of the battery's WiFi module. Empty leaves it to the text entity |
 | `port` | `8080` | Its TCP port |
 | `resting_power` | `-300` | Watts the schedule slot holds, which the battery falls back to when the loop stops. Must be negative, see [below](#why-resting_power-cannot-be-zero) |
-| `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back |
+| `reconcile_interval` | `60s` | How often the scheduler settings are checked and put back; every 5 s until they first hold |
 | `host_text` | `Datalogger address` | Changes the address without reflashing |
 | `enable_switch` | `Datalogger` | Stops all traffic to the datalogger, freeing it for the vendor app |
 | `resting_power_number` | none | `resting_power` as a control; created only when named |

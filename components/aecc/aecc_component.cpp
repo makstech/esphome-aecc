@@ -468,18 +468,27 @@ void AeccComponent::check_ports_() {
   }
 }
 
+bool AeccComponent::note_work_mode_(const std::string &raw) {
+  const uint16_t mode = (uint16_t) strtoul(raw.c_str(), nullptr, 10);
+  if (mode != (uint16_t) WorkMode::SELF_CONSUMPTION && mode != (uint16_t) WorkMode::CUSTOM)
+    return false;
+  this->lock_();
+  this->work_mode_ = (WorkMode) mode;
+  this->work_mode_valid_ = true;
+  this->unlock_();
+  return true;
+}
+
 void AeccComponent::observe_ems_() {
   std::map<uint16_t, std::string> got;
   if (!this->dl_.read({ems::SCHEDULE_MODE, ems::AI_CHARGE, ems::AI_DISCHARGE}, got))
     return;
-  const uint16_t raw = (uint16_t) strtoul(got[ems::SCHEDULE_MODE].c_str(), nullptr, 10);
-  if (raw != (uint16_t) WorkMode::SELF_CONSUMPTION && raw != (uint16_t) WorkMode::CUSTOM) {
-    ESP_LOGW(TAG, "scheduler mode reads %u, which is neither self-consumption nor custom", raw);
+  if (!this->note_work_mode_(got[ems::SCHEDULE_MODE])) {
+    ESP_LOGW(TAG, "scheduler mode reads '%s', which is neither self-consumption nor custom",
+             got[ems::SCHEDULE_MODE].c_str());
     return;
   }
   this->lock_();
-  this->work_mode_ = (WorkMode) raw;
-  this->work_mode_valid_ = true;
   // Only worth keeping while the battery is running its own automation; once we force
   // custom these are zero and remembering that would defeat the point.
   if (this->work_mode_ == WorkMode::SELF_CONSUMPTION) {
@@ -551,6 +560,8 @@ void AeccComponent::reconcile_() {
     this->ems_ready_ = false;
     return;
   }
+  // observe_ems_() does not run while commanding, so this read keeps Work mode current.
+  this->note_work_mode_(got[ems::SCHEDULE_MODE]);
   // The read blocks for up to three seconds, which is long enough for someone to select
   // Off so another controller can take the battery. Writing now would stomp it.
   if (!this->commanding_()) {
@@ -588,6 +599,8 @@ void AeccComponent::reconcile_() {
   ESP_LOGW(TAG, "EMS drifted, reasserting:%s (slot reads '%s', want '%s')", names.c_str(),
            got[3003].c_str(), slot.c_str());
   this->ems_ready_ = this->dl_.write(fix);
+  if (this->ems_ready_ && fix.count(ems::SCHEDULE_MODE))
+    this->note_work_mode_(fix[ems::SCHEDULE_MODE]);
 }
 
 void AeccComponent::bus_task_() {
@@ -727,7 +740,8 @@ void AeccComponent::bus_task_() {
       }
     }
     if (this->dl_.configured() && commanding &&
-        (!this->was_commanding_ || millis() - this->reconciled_at_ > this->reconcile_ms_)) {
+        (!this->was_commanding_ ||
+         millis() - this->reconciled_at_ > (this->ems_ready_ ? this->reconcile_ms_ : RECONCILE_RETRY_MS))) {
       // Leaving Off reconciles at once rather than waiting out the interval, or the
       // chosen mode does nothing until it elapses.
       this->was_commanding_ = true;

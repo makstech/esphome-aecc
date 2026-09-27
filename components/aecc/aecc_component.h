@@ -188,6 +188,8 @@ class AeccComponent : public Component
   std::string slot_(int32_t watts) const;
   /// Reads the scheduler mode without writing anything.
   void observe_ems_();
+  /// Records a scheduler mode reading; false if it is neither of the two known modes.
+  bool note_work_mode_(const std::string &raw);
   /// Applies a queued work mode. Switching away from self-consumption remembers the two
   /// AI enables so switching back can put them there rather than guess at them.
   void apply_work_mode_();
@@ -204,6 +206,8 @@ class AeccComponent : public Component
   /// Negative: a dead controller must be left charging, never discharging.
   int32_t resting_w_{-300};
   uint32_t reconcile_ms_{60000};
+  /// Until the scheduler is confirmed, e.g. while WiFi is still coming up after boot.
+  static const uint32_t RECONCILE_RETRY_MS = 5000;
   uint32_t reconciled_at_{0};
   bool ems_ready_{false};
   uint32_t observed_at_{0};
