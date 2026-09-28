@@ -77,9 +77,10 @@ constexpr uint16_t BATT_PACK_NOT_UNION = 0xA0AF;
 // Live telemetry
 constexpr uint16_t SOC = 0xFE06;                // %
 constexpr uint16_t BATTERY_POWER = 0xFE07;      // W, signed: + discharging
-constexpr uint16_t LOSSES = 0xFE08;             // W, standby + conversion
+constexpr uint16_t AC_CHARGE = 0xFE08;          // W, drawn from AC to charge; 0 while discharging
 constexpr uint16_t GRID_POWER = 0xFE0A;         // W, signed: + export
 constexpr uint16_t BACKUP_LOAD = 0xFE10;        // W
+constexpr uint16_t PV_POWER = 0xFE1F;           // W, signed: AC-coupled PV port, - producing
 
 /// The battery power setpoint, signed, negative charges. Obeyed literally in both
 /// directions to within conversion loss - but only while the energy manager is already

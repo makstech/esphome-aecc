@@ -136,7 +136,7 @@ def _named(schema, default_name=None):
 def _sensor(spec):
     """A reading. Created by default, so naming it only changes the label."""
     fields = {k: v for k, v in spec.items()
-              if k not in ("address", "signed", "metric", "needs", "name", "interval")}
+              if k not in ("address", "signed", "scale", "metric", "needs", "name", "interval")}
     return _named(
         sensor_platform.sensor_schema(AeccSensor, **fields)
         .extend({cv.Optional(CONF_INTERVAL, default=spec.get("interval", "10s")):
@@ -616,7 +616,7 @@ async def _register_telemetry(parent, config):
         cg.add(var.set_parent(parent))
         cg.add(var.set_address(spec["address"]))
         cg.add(var.set_signed(spec["signed"]))
-        cg.add(var.set_scale(1.0))
+        cg.add(var.set_scale(spec.get("scale", 1.0)))
         cg.add(var.set_interval(conf[CONF_INTERVAL]))
 
     for key, spec in DIAGNOSTICS.items():

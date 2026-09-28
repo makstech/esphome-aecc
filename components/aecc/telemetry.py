@@ -26,7 +26,8 @@ _WATTS = dict(
 )
 
 # Sign conventions are the inverter's own: battery positive discharges, grid positive
-# exports. `needs` is what has to be configured before the reading means anything.
+# exports. PV is the exception, flipped so that production reads positive as Home
+# Assistant expects. `needs` is what has to be configured before the reading means anything.
 PRESETS = {
     "soc": dict(
         address=0xFE06, signed=False, name="Battery SOC",
@@ -37,7 +38,8 @@ PRESETS = {
     "grid_power": dict(address=0xFE0A, signed=True, name="Grid power", **_WATTS),
     "backup_load": dict(address=0xFE10, signed=False, name="Backup load", **_WATTS),
     "setpoint": dict(address=0xFE16, signed=True, name="Setpoint", **_WATTS),
-    "losses": dict(address=0xFE08, signed=False, name="Losses", **_WATTS),
+    "ac_charge_power": dict(address=0xFE08, signed=False, name="AC charge power", **_WATTS),
+    "pv_power": dict(address=0xFE1F, signed=True, scale=-1.0, name="PV power", **_WATTS),
 }
 
 _KWH = dict(

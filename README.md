@@ -100,7 +100,8 @@ configured, so a setup without a meter has no meter readings.
 | `grid_power_sensor` | Grid power | At the battery's own connection, positive when exporting |
 | `backup_load_sensor` | Backup load | Load on the battery's own socket |
 | `setpoint_sensor` | Setpoint | What the battery has been told to do |
-| `losses_sensor` | Losses | Standby and conversion losses |
+| `ac_charge_power_sensor` | AC charge power | Drawn from AC to charge the battery, including from AC-coupled PV; zero while discharging |
+| `pv_power_sensor` | PV power | Into the battery's PV port, positive while producing |
 
 **Energy** — always, for Home Assistant's Energy dashboard
 
