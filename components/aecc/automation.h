@@ -18,7 +18,7 @@ template<typename... Ts> class WriteRegisterAction : public Action<Ts...> {
   TEMPLATABLE_VALUE(uint16_t, address)
   TEMPLATABLE_VALUE(uint16_t, value)
 
-  void play(Ts... x) override {
+  void play(const Ts &...x) override {
     this->parent_->queue_write(this->address_.value(x...), this->value_.value(x...));
   }
 
