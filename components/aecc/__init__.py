@@ -223,7 +223,7 @@ def _number(spec):
     )
 
 
-def _control_number(lo, hi, step, unit):
+def _control_number(lo, hi, step, unit, name):
     return _named(
         number.number_schema(AeccNumber, entity_category=ENTITY_CATEGORY_CONFIG,
                              unit_of_measurement=unit)
@@ -238,7 +238,8 @@ def _control_number(lo, hi, step, unit):
             }
         )
         .extend(cv.COMPONENT_SCHEMA)
-        .add_extra(_touch_safe)
+        .add_extra(_touch_safe),
+        name,
     )
 
 
@@ -287,17 +288,18 @@ def _select(spec):
                 cv.Optional(CONF_INTERVAL, default="30s"): cv.positive_time_period_milliseconds,
             }
         )
-        .extend(cv.COMPONENT_SCHEMA)
+        .extend(cv.COMPONENT_SCHEMA),
+        spec["name"],
     )
 
 CONTROL_NUMBERS = {
-    CONF_GRID_TARGET: (_control_number(0, 3000, 1, UNIT_WATT), "GRID_TARGET", "Grid target"),
-    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 1, UNIT_WATT), "MAX_DISCHARGE", "Max discharge"),
-    CONF_MAX_CHARGE: (_control_number(0, 2500, 1, UNIT_WATT), "MAX_CHARGE", "Max charge"),
-    CONF_MIN_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MIN_SOC", "Reserve"),
-    CONF_MAX_SOC: (_control_number(0, 100, 1, UNIT_PERCENT), "MAX_SOC", "Charge ceiling"),
+    CONF_GRID_TARGET: (_control_number(0, 3000, 1, UNIT_WATT, "Grid target"), "GRID_TARGET", "Grid target"),
+    CONF_MAX_DISCHARGE: (_control_number(0, 2500, 1, UNIT_WATT, "Max discharge"), "MAX_DISCHARGE", "Max discharge"),
+    CONF_MAX_CHARGE: (_control_number(0, 2500, 1, UNIT_WATT, "Max charge"), "MAX_CHARGE", "Max charge"),
+    CONF_MIN_SOC: (_control_number(0, 100, 1, UNIT_PERCENT, "Reserve"), "MIN_SOC", "Reserve"),
+    CONF_MAX_SOC: (_control_number(0, 100, 1, UNIT_PERCENT, "Charge ceiling"), "MAX_SOC", "Charge ceiling"),
 }
-RESTING_POWER_NUMBER = _control_number(-2000, -1, 1, UNIT_WATT)
+RESTING_POWER_NUMBER = _control_number(-2000, -1, 1, UNIT_WATT, "Resting power")
 
 
 def _suffixed(specs, suffix, build):
@@ -364,7 +366,8 @@ BACKUP_SCHEMA = cv.All(
             cv.Optional(CONF_RESTORE_URL, default="/aecc/restore"): cv.string_strict,
             cv.Optional(CONF_BUTTON, default="Back up configuration"): _named(
                 button.button_schema(AeccBackupButton, entity_category=ENTITY_CATEGORY_CONFIG)
-                .extend(cv.COMPONENT_SCHEMA)
+                .extend(cv.COMPONENT_SCHEMA),
+                "Back up configuration",
             ),
         }
     ),
@@ -391,10 +394,10 @@ CONF_ACTUATOR_LAG = "actuator_lag"
 CONF_METER_DELAY = "meter_delay"
 # The loop's tuning as controls, each starting from its option above.
 TUNING_NUMBERS = {
-    CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ), "RATE", "Loop rate"),
-    CONF_FILTER_WINDOW: (_control_number(0, 3000, 50, UNIT_MILLISECOND), "FILTER_WINDOW", "Filter window"),
-    CONF_PREDICTIVE_GAIN: (_control_number(0.1, 1, 0.05, cv.UNDEFINED), "PREDICTIVE_GAIN", "Predictive gain"),
-    CONF_METER_DELAY: (_control_number(0, 2000, 50, UNIT_MILLISECOND), "METER_DELAY", "Meter delay"),
+    CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ, "Loop rate"), "RATE", "Loop rate"),
+    CONF_FILTER_WINDOW: (_control_number(0, 3000, 50, UNIT_MILLISECOND, "Filter window"), "FILTER_WINDOW", "Filter window"),
+    CONF_PREDICTIVE_GAIN: (_control_number(0.1, 1, 0.05, cv.UNDEFINED, "Predictive gain"), "PREDICTIVE_GAIN", "Predictive gain"),
+    CONF_METER_DELAY: (_control_number(0, 2000, 50, UNIT_MILLISECOND, "Meter delay"), "METER_DELAY", "Meter delay"),
 }
 
 WORK_MODES = {
@@ -433,10 +436,10 @@ CONTROL_SCHEMA = cv.Schema(
         cv.Optional(CONF_STALE_AFTER, default="5s"): cv.positive_time_period_milliseconds,
         # Always created, because it is the only way to start the loop.
         cv.Optional(CONF_MODE_SELECT, default="Battery mode"): _named(
-            select.select_schema(ControlModeSelect).extend(cv.COMPONENT_SCHEMA)
+            select.select_schema(ControlModeSelect).extend(cv.COMPONENT_SCHEMA), "Battery mode"
         ),
         cv.Optional(f"{CONF_SETPOINT}_number", default="Battery power"):
-            _control_number(-2500, 2500, 1, UNIT_WATT),
+            _control_number(-2500, 2500, 1, UNIT_WATT, "Battery power"),
     }
 ).extend({
     cv.Optional(f"{key}_number", default=spec[2]): spec[0]
@@ -458,7 +461,8 @@ TRACE_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_BUTTON, default="Record trace"): _named(
             button.button_schema(AeccTraceButton, entity_category=ENTITY_CATEGORY_DIAGNOSTIC)
-            .extend(cv.COMPONENT_SCHEMA)
+            .extend(cv.COMPONENT_SCHEMA),
+            "Record trace",
         ),
     }
 )
@@ -559,7 +563,7 @@ CONFIG_SCHEMA = cv.All(
             # The battery's own scheduler mode, which is not on Modbus. Created with the
             # datalogger, because without it Off parks the battery with no way back.
             cv.Optional(CONF_WORK_MODE_SELECT, default="Work mode"): _named(
-                select.select_schema(WorkModeSelect).extend(cv.COMPONENT_SCHEMA)
+                select.select_schema(WorkModeSelect).extend(cv.COMPONENT_SCHEMA), "Work mode"
             ),
         }
     )
