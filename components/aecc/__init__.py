@@ -392,12 +392,14 @@ CONF_LAW = "law"
 CONF_PREDICTIVE_GAIN = "predictive_gain"
 CONF_ACTUATOR_LAG = "actuator_lag"
 CONF_METER_DELAY = "meter_delay"
+CONF_RISE_DELAY = "rise_delay"
 # The loop's tuning as controls, each starting from its option above.
 TUNING_NUMBERS = {
     CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ, "Loop rate"), "RATE", "Loop rate"),
     CONF_FILTER_WINDOW: (_control_number(0, 3000, 50, UNIT_MILLISECOND, "Filter window"), "FILTER_WINDOW", "Filter window"),
     CONF_PREDICTIVE_GAIN: (_control_number(0.1, 1, 0.05, cv.UNDEFINED, "Predictive gain"), "PREDICTIVE_GAIN", "Predictive gain"),
     CONF_METER_DELAY: (_control_number(0, 2000, 50, UNIT_MILLISECOND, "Meter delay"), "METER_DELAY", "Meter delay"),
+    CONF_RISE_DELAY: (_control_number(0, 5000, 100, UNIT_MILLISECOND, "Rise delay"), "RISE_DELAY", "Rise delay"),
 }
 
 WORK_MODES = {
@@ -418,6 +420,7 @@ CONTROL_SCHEMA = cv.Schema(
         # tuned, not measured: longer than the real one double-counts and oscillates.
         cv.Optional(CONF_ACTUATOR_LAG, default="400ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_METER_DELAY, default="300ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_RISE_DELAY, default="2000ms"): cv.positive_time_period_milliseconds,
         cv.Optional(f"{CONF_LAW}_select", default="Control law"): _named(
             select.select_schema(ControlLawSelect).extend(cv.COMPONENT_SCHEMA), "Control law"
         ),
@@ -744,6 +747,7 @@ async def to_code(config):
         cg.add(control.set_predictive_gain(conf[CONF_PREDICTIVE_GAIN]))
         cg.add(control.set_actuator_lag(conf[CONF_ACTUATOR_LAG]))
         cg.add(control.set_meter_delay(conf[CONF_METER_DELAY]))
+        cg.add(control.set_rise_delay(conf[CONF_RISE_DELAY]))
         cg.add(var.set_control(control))
 
         entry = conf.get(f"{CONF_LAW}_select")
@@ -758,6 +762,7 @@ async def to_code(config):
             CONF_FILTER_WINDOW: conf[CONF_FILTER_WINDOW].total_milliseconds,
             CONF_PREDICTIVE_GAIN: conf[CONF_PREDICTIVE_GAIN],
             CONF_METER_DELAY: conf[CONF_METER_DELAY].total_milliseconds,
+            CONF_RISE_DELAY: conf[CONF_RISE_DELAY].total_milliseconds,
         }
         for key, (_, param, _name) in TUNING_NUMBERS.items():
             entry = conf.get(f"{key}_number")

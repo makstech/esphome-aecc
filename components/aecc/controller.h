@@ -54,6 +54,9 @@ class Controller {
   float rate() const { return 1000.0f / (float) this->period_ms_; }
   void set_filter_window(uint32_t ms) { this->window_ms_ = ms; }
   uint32_t filter_window() const { return this->window_ms_; }
+  /// Import must persist this long before zero export covers it; export is corrected at once.
+  void set_rise_delay(uint32_t ms) { this->rise_ms_ = ms; }
+  uint32_t rise_delay() const { return this->rise_ms_; }
   void set_ramp_up(float fraction) {
     this->ramp_up_ = fraction;
     this->recompute_timing_();
@@ -145,7 +148,9 @@ class Controller {
                                           (this->delay_ms_ + this->period_ms_ / 2) / this->period_ms_);
   }
   int16_t clamp_(float target, uint16_t soc, bool soc_valid) const;
-  int16_t predict_step_(uint16_t soc, bool soc_valid);
+  int16_t predict_step_(float grid_w, uint16_t soc, bool soc_valid);
+  /// When the battery stops following, the measured power replaces the model: no windup.
+  void anchor_if_lost_();
   /// Moves the model of what the battery delivers one tick toward what was commanded.
   void advance_model_();
   /// Median, not mean: the meter swings tens of watts at steady state and a mean lets a
@@ -159,6 +164,8 @@ class Controller {
 
   uint32_t period_ms_{VALIDATED_PERIOD_MS};
   uint32_t window_ms_{1500};
+  uint32_t rise_ms_{2000};
+  float rise_floor_{0};
   uint32_t stale_after_ms_{5000};
   float ramp_up_{0.35f};
   float ramp_per_tick_{0.35f};
@@ -199,6 +206,11 @@ class Controller {
   float last_grid_{0};
   float filtered_{0};
   int16_t command_{0};
+  int16_t battery_w_{0};
+  bool battery_fresh_{false};
+  static const int16_t FOLLOW_TOLERANCE_W = 150;
+  static const uint8_t LOST_TICKS = 4;
+  uint8_t lost_ticks_{0};
   bool meter_ok_{false};
   uint32_t loops_{0};
 

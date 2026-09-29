@@ -19,9 +19,12 @@ float Controller::filter_(float sample) {
 
   float within[MAX_SAMPLES];
   size_t n = 0;
+  this->rise_floor_ = sample;
   for (size_t i = 0; i < this->sample_count_; i++) {
     if (now - this->stamps_[i] <= this->window_ms_)
       within[n++] = this->samples_[i];
+    if (now - this->stamps_[i] <= this->rise_ms_)
+      this->rise_floor_ = std::min(this->rise_floor_, this->samples_[i]);
   }
   if (n == 0)
     return sample;
@@ -52,10 +55,10 @@ int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
   return this->clamp_((float) this->command_ + delta, soc, soc_valid);
 }
 
-int16_t Controller::predict_step_(uint16_t soc, bool soc_valid) {
+int16_t Controller::predict_step_(float grid_w, uint16_t soc, bool soc_valid) {
   // What the battery was delivering when the meter took the reading being acted on.
   const size_t back = (this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
-  const float error = this->filtered_ - (float) this->grid_target_;
+  const float error = grid_w - (float) this->grid_target_;
   // Toward export the whole error at once; toward import a share, as a margin for a model
   // that is only approximately the inverter.
   return this->clamp_(this->modelled_[back] + error * (error < 0 ? 1.0f : this->gain_), soc, soc_valid);
@@ -110,12 +113,18 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   if (fresh && this->masked_()) {
     // Hold the command: the reading is the push's blip.
   } else if (fresh) {
+    this->anchor_if_lost_();
+    // Above the target only what has held for rise_ms_ counts; below it, all of it.
+    const float target = (float) this->grid_target_;
+    const float grid = this->filtered_ > target
+                           ? std::max(target, std::min(this->filtered_, this->rise_floor_))
+                           : this->filtered_;
     if (this->frozen_ || !this->warm())
       this->command_ = 0;
     else if (this->law_ == ControlLaw::PREDICTIVE)
-      this->command_ = this->predict_step_(soc, soc_valid);
+      this->command_ = this->predict_step_(grid, soc, soc_valid);
     else
-      this->command_ = this->step_(this->filtered_, soc, soc_valid);
+      this->command_ = this->step_(grid, soc, soc_valid);
   } else {
     const uint32_t age = this->meter_ == nullptr ? UINT32_MAX : this->meter_->age_ms();
     if (age < this->stale_after_ms_)
@@ -169,6 +178,24 @@ void Controller::idle_() {
   this->effective_ = false;
 }
 
+void Controller::anchor_if_lost_() {
+  if (!this->battery_fresh_ || this->masked_())
+    return;
+  // Measured before the last write, so compare with the model before it.
+  const float expected = this->modelled_[(this->modelled_head_ + MAX_DELAY_TICKS - 1) % MAX_DELAY_TICKS];
+  const float tolerance = FOLLOW_TOLERANCE_W + 0.1f * fabsf(expected);
+  if (fabsf((float) this->battery_w_ - expected) <= tolerance) {
+    this->lost_ticks_ = 0;
+    return;
+  }
+  if (++this->lost_ticks_ < LOST_TICKS)
+    return;
+  ESP_LOGD(TAG, "battery at %d W, model at %.0f W: re-anchoring", this->battery_w_, expected);
+  std::fill(this->modelled_, this->modelled_ + MAX_DELAY_TICKS, (float) this->battery_w_);
+  this->command_ = this->battery_w_;
+  this->lost_ticks_ = 0;
+}
+
 void Controller::note_readback_(int16_t read) {
   const bool agrees = read == this->written_;
   if (!agrees && this->guard_agreed_) {
@@ -194,9 +221,12 @@ bool Controller::guard(ModbusRtu *inverter) {
 
 void Controller::deliver_(ModbusRtu *inverter) {
   // Read before writing: a push this write covered up unseen would pass for load.
-  uint16_t before;
-  if (inverter->read_one(reg::SETPOINT, &before, 1))
-    this->note_readback_((int16_t) before);
+  uint16_t regs[reg::SETPOINT - reg::BATTERY_POWER + 1];
+  this->battery_fresh_ = inverter->read(reg::BATTERY_POWER, sizeof(regs) / sizeof(regs[0]), regs, 1);
+  if (this->battery_fresh_) {
+    this->battery_w_ = (int16_t) regs[0];
+    this->note_readback_((int16_t) regs[reg::SETPOINT - reg::BATTERY_POWER]);
+  }
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
   if (wrote)
     this->written_ = this->command_;

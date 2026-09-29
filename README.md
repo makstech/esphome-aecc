@@ -487,6 +487,7 @@ its default.
 | `predictive_gain` | `0.7` | The share of an import error the predictive law corrects per tick; a move toward export is corrected whole |
 | `actuator_lag` | `400ms` | The predictive model: how fast the inverter follows a new setpoint |
 | `meter_delay` | `300ms` | The predictive model: how late the meter shows it. Too long double-counts and oscillates |
+| `rise_delay` | `2000ms` | How long import has to persist before zero export covers it, so a brief load pulse does not leave a spike of export when it stops. Export is corrected at once |
 | `mode_select` | `Battery mode` | The mode dropdown |
 | `setpoint_number` | `Battery power` | The Manual target in watts, positive discharging |
 | `grid_target_number` | `Grid target` | `grid_target` as a control, starting from the configured value |
@@ -499,6 +500,7 @@ its default.
 | `filter_window_number` | `Filter window` | The same for `filter_window` |
 | `predictive_gain_number` | `Predictive gain` | The same for `predictive_gain` |
 | `meter_delay_number` | `Meter delay` | The same for `meter_delay` |
+| `rise_delay_number` | `Rise delay` | The same for `rise_delay` |
 
 **`datalogger:`**
 

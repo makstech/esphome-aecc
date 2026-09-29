@@ -91,6 +91,9 @@ void AeccNumber::apply_(float value) {
     case ControlParam::METER_DELAY:
       control->set_meter_delay((uint32_t) value);
       break;
+    case ControlParam::RISE_DELAY:
+      control->set_rise_delay((uint32_t) value);
+      break;
     case ControlParam::NONE:
       break;
   }
@@ -121,6 +124,8 @@ float AeccNumber::current_() {
       return control->predictive_gain();
     case ControlParam::METER_DELAY:
       return (float) control->meter_delay();
+    case ControlParam::RISE_DELAY:
+      return (float) control->rise_delay();
     default:
       return this->traits.get_min_value();
   }
