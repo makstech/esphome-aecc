@@ -388,7 +388,10 @@ idle, use Manual at 0 W rather than a smaller resting value.
 The datalogger also pushes that value into the battery every few seconds, over whatever
 the ESP32 last commanded. So between control ticks the ESP32 checks its setpoint every
 100 ms and puts it back when a push has overwritten it, then ignores the meter for a
-moment: the blip that follows is the push, not the house.
+moment: the blip that follows is the push, not the house. In Zero export the component
+also turns the scheduler's custom mode off, so the push carries the battery's own
+zero-import target instead of the resting value, and that is what the battery keeps doing
+if the ESP32 stops. Manual turns it back on.
 
 The **Setpoint honoured** sensor turns off if the battery stops obeying. Put it on a
 dashboard or an automation to know when that happens. It reports on the control loop, so

@@ -612,13 +612,17 @@ void AeccComponent::reconcile_() {
   // Fixed rather than following the command: it is what a dead controller leaves running,
   // and negative means charging, which cannot export.
   const std::string slot = this->slot_(this->resting_w_);
+  // Zero export only: the push then carries the battery's own target, which fights Manual.
+  const ControlMode mode = this->control_->mode();
+  const char *custom = mode == ControlMode::ZERO_EXPORT ? "0" : "1";
+  this->reconciled_mode_ = mode;
 
   std::map<uint16_t, std::string> fix;
   // 3026 positive exports unconditionally, regardless of house load, and the app's AI
   // mode writes it, so setting it once is not enough.
   const std::pair<uint16_t, const char *> required[] = {
       {3000, "1"}, {3020, "6"}, {3021, "0"}, {3022, "0"},
-      {3026, "0"}, {3029, "0"}, {3030, "1"}};
+      {3026, "0"}, {3029, "0"}, {3030, custom}};
   for (const auto &r : required) {
     if (!same_number(got[r.first], r.second))
       fix[r.first] = r.second;
@@ -794,7 +798,7 @@ void AeccComponent::bus_task_() {
       }
     }
     if (this->dl_.configured() && commanding &&
-        (!this->was_commanding_ ||
+        (!this->was_commanding_ || this->control_->mode() != this->reconciled_mode_ ||
          millis() - this->reconciled_at_ > (this->ems_ready_ ? this->reconcile_ms_ : RECONCILE_RETRY_MS))) {
       // Leaving Off reconciles at once rather than waiting out the interval, or the
       // chosen mode does nothing until it elapses.
