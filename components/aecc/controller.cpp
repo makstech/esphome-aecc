@@ -235,9 +235,8 @@ void Controller::deliver_(ModbusRtu *inverter) {
   // model that already knows what was commanded.
   this->advance_model_();
   if (!wrote) {
-    // Do not keep integrating against a command the inverter never received, or the
-    // error accumulates to the cap and lands all at once when the bus comes back. Not
-    // zero either: the guard would then write that as a real 0 W command.
+    // Back to what the inverter last received: integrating on a lost write winds up to the
+    // cap, and a 0 here would be written by the guard as a real command.
     this->command_ = this->written_;
     return;
   }

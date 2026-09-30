@@ -26,8 +26,8 @@ _WATTS = dict(
 )
 
 # Sign conventions are the inverter's own: battery positive discharges, grid positive
-# exports. PV is the exception, flipped so that production reads positive as Home
-# Assistant expects. `needs` is what has to be configured before the reading means anything.
+# exports; PV is flipped so production reads positive. `needs` is what has to be configured
+# before the reading means anything.
 PRESETS = {
     "soc": dict(
         address=0xFE06, signed=False, name="Battery SOC",
