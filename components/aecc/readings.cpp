@@ -83,7 +83,9 @@ void AeccSensor::loop() {
   this->have_published_ = true;
 
   const float value = this->signed_ ? (float) (int16_t) raw : (float) raw;
-  this->publish_state(value * this->scale_);
+  const float scaled = value * this->scale_;
+  // A negative scale turns 0 into -0.
+  this->publish_state(scaled == 0 ? 0.0f : scaled);
 }
 
 void AeccSensor::dump_config() {
