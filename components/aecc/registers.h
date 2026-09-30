@@ -29,7 +29,7 @@ namespace reg {
 constexpr uint16_t ON_OFF_CTRL = 0x9C40;
 
 // Settings
-constexpr uint16_t OUT_PRIORITY = 0xA028;       // maps to the app's Inverter Operating Mode, unconfirmed
+constexpr uint16_t OUT_PRIORITY = 0xA028;       // the app's Inverter Operating Mode
 constexpr uint16_t OUT_VOLT = 0xA029;           // x10 V
 constexpr uint16_t OUT_FREQ = 0xA02A;           // x100 Hz
 constexpr uint16_t LINE_RANGE = 0xA02B;         // 0 UPS, 1 APL, 2 GEN

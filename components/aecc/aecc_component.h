@@ -149,6 +149,8 @@ class AeccComponent : public Component
   ModbusRtu inverter_;
   Controller *control_{nullptr};
   bool was_commanding_{false};
+  /// Leaving a commanded mode for Off: energy manager off, the pack charged from PV only.
+  void rest_();
   ControlMode reconciled_mode_{ControlMode::OFF};
   uint32_t next_tick_{0};
   /// When every tick overruns its period, nothing else in the task ever runs -

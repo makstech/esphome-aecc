@@ -157,26 +157,29 @@ across reboots:
 
 | Mode | What it does |
 |---|---|
-| Off | Nothing. The battery answers to the vendor app, the cloud, or anything else on the bus |
+| Off | Rests the battery. The component then writes nothing, so the vendor app, the cloud or anything else on the bus can take over |
 | Zero export | Holds your grid connection at a target, charging rather than exporting |
 | Manual | Holds the battery at a power you set, positive discharging |
 
-Off is the default, and it is genuinely off: the component stops reasserting the battery's
-own scheduler too, so it will not fight you while you drive the battery some other way.
+Off is the default. Switching to it from Zero export or Manual turns the battery's energy
+manager off and sets its priorities to Photovoltaic priority with PV-only charging, once:
+the battery rests, the house runs on PV and then the grid, and the pack charges from PV
+surplus alone. After that the component writes nothing, so it will not fight you while you
+drive the battery some other way. Without a `datalogger:` it only stops writing.
 Zero export only appears in the list once you have given the component a `meter:`; Manual
 is there from the start, driven by the **Battery power** setpoint. Manual at 0 W parks the
 battery idle while the ESP32 stays in control.
 
 ### Handing the battery back
 
-Off stops the component writing, but it leaves the battery's own scheduler wherever the
-component last put it — parked, doing nothing. A `datalogger:` block therefore also gives
-you a **Work mode** dropdown, for handing the battery back to its built-in
-self-consumption automation. Name it with `work_mode_select:` to change the label.
+A `datalogger:` block also gives you a **Work mode** dropdown, for handing the battery back
+to its built-in self-consumption automation while in Off. Choosing either work mode turns
+the energy manager back on. Name it with `work_mode_select:` to change the label.
 
 | Battery mode | Work mode | What runs the battery |
 |---|---|---|
 | Off | Self-consumption | The battery's own automation |
+| Off, after Zero export or Manual | unchanged | Nothing: the energy manager is off and the battery rests |
 | Off | Custom | Nothing; it holds the resting slot, a slow charge |
 | Zero export or Manual | Custom | This component |
 

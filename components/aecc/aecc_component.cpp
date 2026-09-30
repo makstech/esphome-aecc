@@ -519,10 +519,43 @@ bool AeccComponent::note_work_mode_(const std::string &raw) {
   return true;
 }
 
+// The datalogger reports some of these as floats, so "0.0" has to match "0".
+static bool same_number(const std::string &got, const char *want) {
+  char *end = nullptr;
+  const float value = strtof(got.c_str(), &end);
+  return end != got.c_str() && *end == '\0' && value == strtof(want, nullptr);
+}
+
+void AeccComponent::rest_() {
+  // The energy manager puts Hybrid and Mixed back within a minute, so the priorities only
+  // hold with it off.
+  if (!this->dl_.configured())
+    return;
+  if (!this->dl_.write({{ems::ENABLE, "0"}})) {
+    ESP_LOGW(TAG, "could not turn the energy manager off; the battery keeps its last schedule");
+    return;
+  }
+  // Photovoltaic priority and PV only: loads from PV then the grid, the pack charged from PV
+  // alone. PV Battery Priority would drain the pack into the backup socket all night, and
+  // Photovoltaic-priority charging still charges from the grid when there is no PV.
+  this->queue_write(reg::OUT_PRIORITY, 0);
+  this->queue_write(reg::CHG_PRIORITY, 3);
+  this->lock_();
+  this->work_mode_valid_ = false;
+  this->unlock_();
+  ESP_LOGI(TAG, "resting: energy manager off, the pack charges from PV only");
+}
+
 void AeccComponent::observe_ems_() {
   std::map<uint16_t, std::string> got;
-  if (!this->dl_.read({ems::SCHEDULE_MODE, ems::AI_CHARGE, ems::AI_DISCHARGE}, got))
+  if (!this->dl_.read({ems::ENABLE, ems::SCHEDULE_MODE, ems::AI_CHARGE, ems::AI_DISCHARGE}, got))
     return;
+  if (same_number(got[ems::ENABLE], "0")) {
+    this->lock_();
+    this->work_mode_valid_ = false;
+    this->unlock_();
+    return;
+  }
   if (!this->note_work_mode_(got[ems::SCHEDULE_MODE])) {
     ESP_LOGW(TAG, "scheduler mode reads '%s', which is neither self-consumption nor custom",
              got[ems::SCHEDULE_MODE].c_str());
@@ -547,10 +580,10 @@ void AeccComponent::apply_work_mode_() {
 
   std::map<uint16_t, std::string> fix;
   if (want == WorkMode::CUSTOM) {
-    fix = {{ems::SCHEDULE_MODE, "6"}, {ems::AI_CHARGE, "0"},
+    fix = {{ems::ENABLE, "1"}, {ems::SCHEDULE_MODE, "6"}, {ems::AI_CHARGE, "0"},
            {ems::AI_DISCHARGE, "0"}, {ems::CUSTOM_MODE, "1"}};
   } else {
-    fix = {{ems::SCHEDULE_MODE, "3"}, {ems::CUSTOM_MODE, "0"}};
+    fix = {{ems::ENABLE, "1"}, {ems::SCHEDULE_MODE, "3"}, {ems::CUSTOM_MODE, "0"}};
     // What the AI enables should be is not recorded anywhere, so put back what the
     // battery had rather than inventing values. Without a reading, leave them alone and
     // say so: the app can set them.
@@ -570,13 +603,6 @@ void AeccComponent::apply_work_mode_() {
   this->work_mode_ = want;
   this->work_mode_valid_ = true;
   this->unlock_();
-}
-
-// The datalogger reports some of these as floats, so "0.0" has to match "0".
-static bool same_number(const std::string &got, const char *want) {
-  char *end = nullptr;
-  const float value = strtof(got.c_str(), &end);
-  return end != got.c_str() && *end == '\0' && value == strtof(want, nullptr);
 }
 
 std::string AeccComponent::slot_(int32_t watts) const {
@@ -745,6 +771,7 @@ void AeccComponent::bus_task_() {
       this->was_commanding_ = false;
       // Whatever the EMS holds now is no longer this component's doing.
       this->ems_ready_ = false;
+      this->rest_();
     }
 
     this->lock_();
