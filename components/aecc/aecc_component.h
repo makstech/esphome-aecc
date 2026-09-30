@@ -236,6 +236,8 @@ class AeccComponent : public Component
   uint32_t reconcile_ms_{60000};
   /// Until the scheduler is confirmed, e.g. while WiFi is still coming up after boot.
   static const uint32_t RECONCILE_RETRY_MS = 5000;
+  static const uint8_t READ_FAILURES_BEFORE_UNREADY = 3;
+  uint8_t reconcile_failures_{0};
   uint32_t reconciled_at_{0};
   bool ems_ready_{false};
   uint32_t observed_at_{0};

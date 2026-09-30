@@ -623,9 +623,13 @@ void AeccComponent::reconcile_() {
   const bool read_ok = this->dl_.read(want, got);
   this->feed_wdt_();
   if (!read_ok) {
-    this->ems_ready_ = false;
+    // One failed read says nothing about the configuration, and going quiet on it hands the
+    // battery to the energy manager's own regulation until the retry.
+    if (++this->reconcile_failures_ >= READ_FAILURES_BEFORE_UNREADY)
+      this->ems_ready_ = false;
     return;
   }
+  this->reconcile_failures_ = 0;
   // observe_ems_() does not run while commanding, so this read keeps Work mode current.
   this->note_work_mode_(got[ems::SCHEDULE_MODE]);
   // The read blocks for up to three seconds, which is long enough for someone to select
@@ -721,10 +725,15 @@ void AeccComponent::bus_task_() {
       if (!this->ota_parked_) {
         this->ota_parked_ = true;
         // Park at zero and then go quiet: the resting slot takes over a few seconds
-        // later, and a battery on a charging slot cannot export. In Off there is nothing
-        // to park, and writing would break the promise that Off touches nothing.
-        if (this->commanding_())
+        // later, and a battery on a charging slot cannot export. Custom mode goes back on
+        // first, or the energy manager's own regulation would take over instead. In Off
+        // there is nothing to park.
+        if (this->commanding_()) {
+          if (this->dl_.configured() && this->control_->mode() == ControlMode::ZERO_EXPORT)
+            this->dl_.write({{ems::CUSTOM_MODE, "1"}});
+          this->reconciled_mode_ = ControlMode::OFF;
           this->inverter_.write_one(reg::SETPOINT, 0, 1);
+        }
         if (this->control_ != nullptr)
           this->control_->set_parked(true);
         ESP_LOGW(TAG, "OTA in progress: setpoint parked, bus idle");
@@ -826,7 +835,8 @@ void AeccComponent::bus_task_() {
     }
     if (this->dl_.configured() && commanding &&
         (!this->was_commanding_ || this->control_->mode() != this->reconciled_mode_ ||
-         millis() - this->reconciled_at_ > (this->ems_ready_ ? this->reconcile_ms_ : RECONCILE_RETRY_MS))) {
+         millis() - this->reconciled_at_ >
+             (this->ems_ready_ && this->reconcile_failures_ == 0 ? this->reconcile_ms_ : RECONCILE_RETRY_MS))) {
       // Leaving Off reconciles at once rather than waiting out the interval, or the
       // chosen mode does nothing until it elapses.
       this->was_commanding_ = true;
