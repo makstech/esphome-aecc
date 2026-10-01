@@ -434,20 +434,27 @@ on a completely blank unit that last step is still yours.
 
 ## 📈 Traces
 
-For tuning the loop, `trace:` records what it sees as fast as the two buses allow, about
-nine samples a second, and serves the last recording as CSV:
+For tuning the loop, `trace:` records what it sees, one sample per control tick, and
+serves the last recording as CSV:
 
 ```yaml
 aecc:
   trace:
+    export_trigger: 30   # optional: export above 30 W records the moment by itself
 ```
 
 Press **Record trace**, do whatever you want to see (step the Manual setpoint, switch a
-load on), then fetch `http://<device>/aecc/trace` once the recording ends. Each row has a
-timestamp in milliseconds, the meter reading, the inverter's battery, grid-port and backup
-power, the setpoint register as the inverter holds it, the loop's command and the mode
-(`0` Off, `1` Zero export, `2` Manual). A setpoint that differs from the command is
-something else writing to the battery. It needs `web_server:`.
+load on), then fetch `http://<device>/aecc/trace` once the recording ends. A recording
+starts with the five seconds before it was asked for, at negative timestamps. With
+`export_trigger`, export above that many watts records those five seconds and five more,
+at most once a minute, so it is there to fetch after the fact.
+
+Each row has a timestamp in milliseconds from the trigger, the meter reading, the
+inverter's battery, grid-port and backup power, the setpoint register as the inverter holds
+it, the loop's command, the mode (`0` Off, `1` Zero export, `2` Manual), the PV port's
+power and `1` where the datalogger pushed its own setpoint since the row before. A
+setpoint that differs from the command is something else writing to the battery. It needs
+`web_server:` and `control:`.
 
 ## 📋 All options
 
@@ -494,6 +501,7 @@ its default.
 | `actuator_lag` | `400ms` | The predictive model: how fast the inverter follows a new setpoint |
 | `meter_delay` | `300ms` | The predictive model: how late the meter shows it. Too long double-counts and oscillates |
 | `rise_delay` | `2000ms` | How long import has to persist before zero export covers it, so a brief load pulse does not leave a spike of export when it stops. Export is corrected at once |
+| `pv_feed_forward` | `true` | With the `predictive` law, a rise on the battery's PV port is absorbed as the inverter reports it, before the meter shows it as export. A fall is left to the meter |
 | `mode_select` | `Battery mode` | The mode dropdown |
 | `setpoint_number` | `Battery power` | The Manual target in watts, positive discharging |
 | `grid_target_number` | `Grid target` | `grid_target` as a control, starting from the configured value |
@@ -533,7 +541,8 @@ its default.
 | Key | Default | What it does |
 |---|---|---|
 | `url` | `/aecc/trace` | Where the last trace is served |
-| `duration` | `30s` | How long one recording runs, up to 2 minutes |
+| `duration` | `30s` | How long a recording from the button runs, up to 2 minutes |
+| `export_trigger` | | Export above this many watts records five seconds either side of it, at most once a minute |
 | `button` | `Record trace` | Starts a recording |
 
 Numbers show as a number box unless their unit is a percentage; set `mode:` on one to

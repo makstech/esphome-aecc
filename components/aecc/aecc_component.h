@@ -84,12 +84,18 @@ class AeccComponent : public Component
   double energy_charged_kwh();
   double energy_discharged_kwh();
 
-  /// Record what the loop sees, as fast as the two buses allow, for tuning it.
+  /// Record what the loop sees, a sample per tick, for tuning it. A recording starts with
+  /// the samples from just before it was asked for.
   void request_trace();
   bool trace_running();
   /// The last completed trace as CSV; empty while one is recording or before the first.
   std::string trace_csv();
-  void set_trace_duration(uint32_t ms) { this->trace_ms_ = ms; }
+  void set_trace_duration(uint32_t ms) {
+    this->trace_ms_ = ms;
+    this->trace_enabled_ = true;
+  }
+  /// Export above this many watts starts a short recording by itself.
+  void set_trace_export_trigger(int32_t watts) { this->trace_export_w_ = watts; }
 
   /// Apply a previously captured backup. Only the settings island is written: the rest of
   /// the map is incompletely identified, and an illegal write is a worse prospect than an
@@ -181,18 +187,35 @@ class AeccComponent : public Component
   bool backup_running_{false};
 
   struct TraceSample {
-    uint32_t t_ms;
-    int16_t meter, battery, grid, backup, setpoint, command;
+    uint32_t at;   // millis() when taken
+    int32_t t_ms;  // from the trigger; negative before it
+    int16_t meter, battery, grid, backup, setpoint, command, pv;
     uint8_t mode;
+    bool push;
   };
   static const int16_t NO_READING = INT16_MIN;
-  static const uint32_t TRACE_EVERY_MS = 100;
+  static const uint32_t TRACE_BEFORE_MS = 5000;
+  static const uint32_t TRACE_EXPORT_MS = 5000;
+  /// One recording per export event, and time to fetch it before the next replaces it.
+  static const uint32_t TRACE_EXPORT_HOLDOFF_MS = 60000;
+  static const size_t TRACE_RECENT = 64;
+  TraceSample trace_recent_[TRACE_RECENT]{};
+  size_t trace_recent_head_{0};
+  size_t trace_recent_count_{0};
   std::vector<TraceSample> trace_;
+  bool trace_enabled_{false};
   volatile bool trace_running_{false};
   uint32_t trace_ms_{30000};
-  uint32_t trace_started_{0};
-  uint32_t trace_next_{0};
-  void trace_step_();
+  uint32_t trace_at_{0};
+  uint32_t trace_len_{0};
+  uint32_t trace_ended_at_{0};
+  bool trace_ended_{false};
+  int32_t trace_export_w_{0};
+  uint32_t trace_pushes_{0};
+  /// After every tick: keeps the recent samples and feeds a running recording.
+  void trace_record_();
+  /// Caller holds the lock.
+  void trace_start_(uint32_t now, uint32_t len_ms);
   size_t backup_island_{0};
   uint16_t backup_addr_{0};
   uint16_t backup_count_{0};

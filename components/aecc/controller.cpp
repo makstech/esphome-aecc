@@ -80,6 +80,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     this->last_mode_ = mode;
     this->reset_filter_();
     std::fill(this->modelled_, this->modelled_ + MAX_DELAY_TICKS, 0.0f);
+    std::fill(this->pv_hist_, this->pv_hist_ + MAX_DELAY_TICKS, NAN);
     // Whatever the register holds from before is not a push.
     this->guard_agreed_ = false;
   }
@@ -87,11 +88,20 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   // Read in every mode, so the meter stays a grid reading while nothing is regulated.
   float watts;
   const bool fresh = this->read_meter_(&watts);
+  this->meter_fresh_ = fresh;
+  // The inverter bus stays idle across an OTA.
+  if (this->parked_)
+    this->battery_fresh_ = false;
+  else
+    this->read_telemetry_(inverter);
 
   if (mode == ControlMode::OFF) {
     this->idle_();
     return;
   }
+  // Read before writing: a push this tick's write covered up unseen would pass for load.
+  if (this->battery_fresh_)
+    this->note_readback_(this->setpoint_read_);
 
   if (mode == ControlMode::MANUAL) {
     const int32_t asked = this->manual_w_;
@@ -122,7 +132,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     if (this->frozen_ || !this->warm())
       this->command_ = 0;
     else if (this->law_ == ControlLaw::PREDICTIVE)
-      this->command_ = this->predict_step_(grid, soc, soc_valid);
+      this->command_ = this->predict_step_(grid - this->pv_rise_(), soc, soc_valid);
     else
       this->command_ = this->step_(grid, soc, soc_valid);
   } else {
@@ -181,8 +191,8 @@ void Controller::idle_() {
 void Controller::anchor_if_lost_() {
   if (!this->battery_fresh_ || this->masked_())
     return;
-  // Measured before the last write, so compare with the model before it.
-  const float expected = this->modelled_[(this->modelled_head_ + MAX_DELAY_TICKS - 1) % MAX_DELAY_TICKS];
+  // Measured a tick after the last write, so compare with the model after it.
+  const float expected = this->modelled_[this->modelled_head_];
   const float tolerance = FOLLOW_TOLERANCE_W + 0.1f * fabsf(expected);
   if (fabsf((float) this->battery_w_ - expected) <= tolerance) {
     this->lost_ticks_ = 0;
@@ -201,6 +211,7 @@ void Controller::note_readback_(int16_t read) {
   if (!agrees && this->guard_agreed_) {
     this->pushed_ = true;
     this->pushed_at_ = millis();
+    this->pushes_++;
   }
   this->guard_agreed_ = agrees;
 }
@@ -219,14 +230,31 @@ bool Controller::guard(ModbusRtu *inverter) {
   return true;
 }
 
-void Controller::deliver_(ModbusRtu *inverter) {
-  // Read before writing: a push this write covered up unseen would pass for load.
-  uint16_t regs[reg::SETPOINT - reg::BATTERY_POWER + 1];
+void Controller::read_telemetry_(ModbusRtu *inverter) {
+  uint16_t regs[reg::PV_POWER - reg::BATTERY_POWER + 1];
   this->battery_fresh_ = inverter->read(reg::BATTERY_POWER, sizeof(regs) / sizeof(regs[0]), regs, 1);
   if (this->battery_fresh_) {
     this->battery_w_ = (int16_t) regs[0];
-    this->note_readback_((int16_t) regs[reg::SETPOINT - reg::BATTERY_POWER]);
+    this->grid_port_w_ = (int16_t) regs[reg::GRID_POWER - reg::BATTERY_POWER];
+    this->backup_w_ = (int16_t) regs[reg::BACKUP_LOAD - reg::BATTERY_POWER];
+    this->setpoint_read_ = (int16_t) regs[reg::SETPOINT - reg::BATTERY_POWER];
+    const int32_t pv = -(int32_t) (int16_t) regs[reg::PV_POWER - reg::BATTERY_POWER];
+    this->pv_w_ = (int16_t) std::min<int32_t>(pv, INT16_MAX);
   }
+  this->pv_head_ = (this->pv_head_ + 1) % MAX_DELAY_TICKS;
+  this->pv_hist_[this->pv_head_] = this->battery_fresh_ ? (float) this->pv_w_ : NAN;
+}
+
+float Controller::pv_rise_() const {
+  if (!this->pv_feed_forward_ || this->delay_ticks_ == 0)
+    return 0.0f;
+  const float now = this->pv_hist_[this->pv_head_];
+  const float then = this->pv_hist_[(this->pv_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS];
+  // NAN compares false, so a failed read on either side adds nothing.
+  return now > then ? now - then : 0.0f;
+}
+
+void Controller::deliver_(ModbusRtu *inverter) {
   const bool wrote = inverter->write_one(reg::SETPOINT, (uint16_t) this->command_, 1);
   if (wrote)
     this->written_ = this->command_;

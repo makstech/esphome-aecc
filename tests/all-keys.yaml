@@ -44,6 +44,7 @@ aecc:
   trace:
     url: /aecc/trace
     duration: 30s
+    export_trigger: 30
     button: Take a trace
   work_mode_select: Work mode
   datalogger:
@@ -68,6 +69,7 @@ aecc:
     actuator_lag: 400ms
     meter_delay: 300ms
     rise_delay: 2000ms
+    pv_feed_forward: true
     grid_target: 60
     max_discharge: 600
     max_charge: 2400

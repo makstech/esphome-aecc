@@ -74,6 +74,9 @@ class Controller {
     this->recompute_timing_();
   }
   uint32_t meter_delay() const { return this->delay_ms_; }
+  /// With the predictive law, PV that rose on the port since the meter's reading is
+  /// absorbed before the meter shows it as export. Falls are left to the meter.
+  void set_pv_feed_forward(bool on) { this->pv_feed_forward_ = on; }
   void set_stale_after(uint32_t ms) { this->stale_after_ms_ = ms; }
   void set_min_soc(uint8_t pct) { this->min_soc_ = pct; }
   void set_max_soc(uint8_t pct) { this->max_soc_ = pct; }
@@ -120,6 +123,17 @@ class Controller {
   float filtered_grid_w() const { return this->filtered_; }
   int16_t command() const { return this->command_; }
   bool meter_ok() const { return this->meter_ok_; }
+  /// Whether this tick's meter and telemetry reads answered.
+  bool meter_fresh() const { return this->meter_fresh_; }
+  bool telemetry_fresh() const { return this->battery_fresh_; }
+  int16_t battery_w() const { return this->battery_w_; }
+  int16_t grid_port_w() const { return this->grid_port_w_; }
+  int16_t backup_w() const { return this->backup_w_; }
+  int16_t setpoint_w() const { return this->setpoint_read_; }
+  /// Positive producing.
+  int16_t pv_w() const { return this->pv_w_; }
+  /// Datalogger pushes seen so far.
+  uint32_t pushes() const { return this->pushes_; }
   uint32_t loops() const { return this->loops_; }
   bool warm() const { return this->sample_count_ >= WARMUP_SAMPLES; }
 
@@ -133,6 +147,11 @@ class Controller {
   /// Starts the median filter again. Whatever it holds is from before the mode changed,
   /// and the stamps are outside the window, so one tick would act on a single sample.
   void reset_filter_();
+  /// One read across the telemetry window from the battery to the PV port, at the start of
+  /// every tick: separate frames would each pay the inter-frame gap.
+  void read_telemetry_(ModbusRtu *inverter);
+  /// How much the PV port rose since the meter took its reading.
+  float pv_rise_() const;
   /// Writes command_ and, occasionally, checks the inverter is acting on it.
   void deliver_(ModbusRtu *inverter);
   /// Corrections are sized for the rate the law was validated at. The inverter takes about
@@ -205,9 +224,19 @@ class Controller {
 
   float last_grid_{0};
   float filtered_{0};
+  bool meter_fresh_{false};
   int16_t command_{0};
   int16_t battery_w_{0};
+  int16_t grid_port_w_{0};
+  int16_t backup_w_{0};
+  int16_t setpoint_read_{0};
+  int16_t pv_w_{0};
   bool battery_fresh_{false};
+  bool pv_feed_forward_{true};
+  /// PV port power per tick, newest at pv_head_; NAN where the read failed.
+  float pv_hist_[MAX_DELAY_TICKS]{};
+  size_t pv_head_{0};
+  uint32_t pushes_{0};
   static const int16_t FOLLOW_TOLERANCE_W = 150;
   static const uint8_t LOST_TICKS = 4;
   uint8_t lost_ticks_{0};

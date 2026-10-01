@@ -393,6 +393,8 @@ CONF_PREDICTIVE_GAIN = "predictive_gain"
 CONF_ACTUATOR_LAG = "actuator_lag"
 CONF_METER_DELAY = "meter_delay"
 CONF_RISE_DELAY = "rise_delay"
+CONF_PV_FEED_FORWARD = "pv_feed_forward"
+CONF_EXPORT_TRIGGER = "export_trigger"
 # The loop's tuning as controls, each starting from its option above.
 TUNING_NUMBERS = {
     CONF_RATE: (_control_number(0.5, 5, 0.5, UNIT_HERTZ, "Loop rate"), "RATE", "Loop rate"),
@@ -421,6 +423,9 @@ CONTROL_SCHEMA = cv.Schema(
         cv.Optional(CONF_ACTUATOR_LAG, default="400ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_METER_DELAY, default="300ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_RISE_DELAY, default="2000ms"): cv.positive_time_period_milliseconds,
+        # PV on the battery's own port reaches the grid without passing the setpoint, so a
+        # rise is cancelled from the inverter's reading instead of waiting for the meter.
+        cv.Optional(CONF_PV_FEED_FORWARD, default=True): cv.boolean,
         cv.Optional(f"{CONF_LAW}_select", default="Control law"): _named(
             select.select_schema(ControlLawSelect).extend(cv.COMPONENT_SCHEMA), "Control law"
         ),
@@ -457,11 +462,12 @@ TRACE_SCHEMA = cv.Schema(
         cv.GenerateID(): cv.declare_id(TraceHandler),
         cv.GenerateID(CONF_WEB_SERVER_BASE_ID): cv.use_id(web_server_base.WebServerBase),
         cv.Optional(CONF_URL, default="/aecc/trace"): cv.string_strict,
-        # Samples are held in RAM until fetched, about 24 bytes each at ~9 a second.
+        # Samples are held in RAM until fetched, 24 bytes a control tick.
         cv.Optional(CONF_DURATION, default="30s"): cv.All(
             cv.positive_time_period_milliseconds,
             cv.Range(max=cv.TimePeriod(seconds=120)),
         ),
+        cv.Optional(CONF_EXPORT_TRIGGER): cv.int_range(min=1, max=20000),
         cv.Optional(CONF_BUTTON, default="Record trace"): _named(
             button.button_schema(AeccTraceButton, entity_category=ENTITY_CATEGORY_DIAGNOSTIC)
             .extend(cv.COMPONENT_SCHEMA),
@@ -521,6 +527,9 @@ def _validate(config):
         _in_number_range(config[CONF_DATALOGGER], CONF_RESTING_POWER,
                          f"{CONF_RESTING_POWER}_number", [CONF_DATALOGGER])
     if CONF_CONTROL not in config:
+        if CONF_TRACE in config:
+            raise cv.Invalid("trace: records the control loop's ticks; it needs control:",
+                             path=[CONF_TRACE])
         return config
     # Zero export needs a meter and manual needs a number to set; with neither, the mode
     # select would offer nothing but Off.
@@ -748,6 +757,7 @@ async def to_code(config):
         cg.add(control.set_actuator_lag(conf[CONF_ACTUATOR_LAG]))
         cg.add(control.set_meter_delay(conf[CONF_METER_DELAY]))
         cg.add(control.set_rise_delay(conf[CONF_RISE_DELAY]))
+        cg.add(control.set_pv_feed_forward(conf[CONF_PV_FEED_FORWARD]))
         cg.add(var.set_control(control))
 
         entry = conf.get(f"{CONF_LAW}_select")
@@ -816,6 +826,8 @@ async def to_code(config):
         cg.add(handler.set_parent(var))
         cg.add(handler.set_url(conf[CONF_URL]))
         cg.add(var.set_trace_duration(conf[CONF_DURATION]))
+        if CONF_EXPORT_TRIGGER in conf:
+            cg.add(var.set_trace_export_trigger(conf[CONF_EXPORT_TRIGGER]))
         trace_button = await button.new_button(conf[CONF_BUTTON])
         await cg.register_component(trace_button, conf[CONF_BUTTON])
         cg.add(trace_button.set_parent(var))

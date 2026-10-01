@@ -199,16 +199,15 @@ double AeccComponent::energy_discharged_kwh() {
 }
 
 void AeccComponent::request_trace() {
+  if (this->control_ == nullptr)
+    return;
   this->lock_();
-  if (!this->trace_running_) {
-    this->trace_.clear();
-    this->trace_.reserve(this->trace_ms_ / TRACE_EVERY_MS + 8);
-    this->trace_started_ = millis();
-    this->trace_next_ = this->trace_started_;
-    this->trace_running_ = true;
-    ESP_LOGI(TAG, "trace started, %u s", (unsigned) (this->trace_ms_ / 1000));
-  }
+  const bool started = !this->trace_running_;
+  if (started)
+    this->trace_start_(millis(), this->trace_ms_);
   this->unlock_();
+  if (started)
+    ESP_LOGI(TAG, "trace started, %u s", (unsigned) (this->trace_ms_ / 1000));
 }
 
 bool AeccComponent::trace_running() {
@@ -235,8 +234,8 @@ std::string AeccComponent::trace_csv() {
   if (samples.empty())
     return "";
 
-  std::string out = "t_ms,meter_w,battery_w,grid_w,backup_w,setpoint_w,command_w,mode\n";
-  out.reserve(out.size() + samples.size() * 40);
+  std::string out = "t_ms,meter_w,battery_w,grid_w,backup_w,setpoint_w,command_w,mode,pv_w,push\n";
+  out.reserve(out.size() + samples.size() * 48);
   for (const auto &s : samples) {
     out += std::to_string(s.t_ms);
     append_reading(out, s.meter, s.meter != NO_READING);
@@ -246,42 +245,75 @@ std::string AeccComponent::trace_csv() {
     append_reading(out, s.setpoint, s.setpoint != NO_READING);
     append_reading(out, s.command, true);
     append_reading(out, s.mode, true);
+    append_reading(out, s.pv, s.pv != NO_READING);
+    append_reading(out, s.push ? 1 : 0, true);
     out += '\n';
   }
   return out;
 }
 
-void AeccComponent::trace_step_() {
-  const uint32_t now = millis();
-  this->trace_next_ = now + TRACE_EVERY_MS;
-  TraceSample sample{};
-  sample.t_ms = now - this->trace_started_;
-
-  MeterSource *meter = this->control_ == nullptr ? nullptr : this->control_->meter();
-  float watts;
-  sample.meter = meter != nullptr && meter->poll(&watts)
-                     ? (int16_t) std::max(-32767.0f, std::min(32767.0f, watts))
-                     : NO_READING;
-
-  // One read across the telemetry window, so the four values are from the same instant.
-  uint16_t regs[reg::SETPOINT - reg::BATTERY_POWER + 1];
-  const bool have = this->inverter_.read(reg::BATTERY_POWER, sizeof(regs) / sizeof(regs[0]), regs, 1);
-  sample.battery = have ? (int16_t) regs[0] : NO_READING;
-  sample.grid = have ? (int16_t) regs[reg::GRID_POWER - reg::BATTERY_POWER] : NO_READING;
-  sample.backup = have ? (int16_t) regs[reg::BACKUP_LOAD - reg::BATTERY_POWER] : NO_READING;
-  sample.setpoint = have ? (int16_t) regs[reg::SETPOINT - reg::BATTERY_POWER] : NO_READING;
-  if (this->control_ != nullptr) {
-    sample.command = this->control_->command();
-    sample.mode = (uint8_t) this->control_->mode();
+void AeccComponent::trace_start_(uint32_t now, uint32_t len_ms) {
+  this->trace_.clear();
+  this->trace_.reserve(TRACE_RECENT + len_ms / std::max<uint32_t>(this->control_->period_ms(), 1) + 8);
+  const size_t oldest = (this->trace_recent_head_ + TRACE_RECENT - this->trace_recent_count_) % TRACE_RECENT;
+  for (size_t i = 0; i < this->trace_recent_count_; i++) {
+    TraceSample s = this->trace_recent_[(oldest + i) % TRACE_RECENT];
+    if (now - s.at > TRACE_BEFORE_MS)
+      continue;
+    s.t_ms = -(int32_t) (now - s.at);
+    this->trace_.push_back(s);
   }
+  this->trace_at_ = now;
+  this->trace_len_ = len_ms;
+  this->trace_running_ = true;
+}
 
+void AeccComponent::trace_record_() {
+  if (!this->trace_enabled_)
+    return;
+  const Controller *c = this->control_;
+  TraceSample s{};
+  s.at = millis();
+  s.meter = c->meter_fresh() ? (int16_t) std::max(-32767.0f, std::min(32767.0f, c->last_grid_w())) : NO_READING;
+  const bool have = c->telemetry_fresh();
+  s.battery = have ? c->battery_w() : NO_READING;
+  s.grid = have ? c->grid_port_w() : NO_READING;
+  s.backup = have ? c->backup_w() : NO_READING;
+  s.setpoint = have ? c->setpoint_w() : NO_READING;
+  s.pv = have ? c->pv_w() : NO_READING;
+  s.command = c->command();
+  s.mode = (uint8_t) c->mode();
+  s.push = c->pushes() != this->trace_pushes_;
+  this->trace_pushes_ = c->pushes();
+
+  bool exported = false;
+  size_t done = 0;
   this->lock_();
-  this->trace_.push_back(sample);
-  if (now - this->trace_started_ >= this->trace_ms_ || this->trace_.size() >= this->trace_.capacity()) {
-    this->trace_running_ = false;
-    ESP_LOGI(TAG, "trace done, %u samples", (unsigned) this->trace_.size());
+  if (!this->trace_running_ && this->trace_export_w_ > 0 && s.meter != NO_READING &&
+      s.meter < -this->trace_export_w_ &&
+      (!this->trace_ended_ || s.at - this->trace_ended_at_ >= TRACE_EXPORT_HOLDOFF_MS)) {
+    this->trace_start_(s.at, TRACE_EXPORT_MS);
+    exported = true;
   }
+  if (this->trace_running_) {
+    s.t_ms = (int32_t) (s.at - this->trace_at_);
+    this->trace_.push_back(s);
+    if (s.at - this->trace_at_ >= this->trace_len_ || this->trace_.size() >= this->trace_.capacity()) {
+      this->trace_running_ = false;
+      this->trace_ended_ = true;
+      this->trace_ended_at_ = s.at;
+      done = this->trace_.size();
+    }
+  }
+  this->trace_recent_[this->trace_recent_head_] = s;
+  this->trace_recent_head_ = (this->trace_recent_head_ + 1) % TRACE_RECENT;
+  if (this->trace_recent_count_ < TRACE_RECENT)
+    this->trace_recent_count_++;
   this->unlock_();
+  if (exported)
+    ESP_LOGW(TAG, "meter at %d W: export trace started", s.meter);
+  if (done > 0)
+    ESP_LOGI(TAG, "trace done, %u samples", (unsigned) done);
 }
 
 void AeccComponent::backup_step_() {
@@ -714,6 +746,7 @@ void AeccComponent::bus_task_() {
         const bool soc_valid = this->get_register(reg::SOC, &soc);
         const bool may_command = !this->dl_.present() || this->ems_ready_ || !this->commanding_();
         this->control_->tick(&this->inverter_, soc, soc_valid, may_command);
+        this->trace_record_();
         continue;
       }
       if (this->control_->guard(&this->inverter_))
@@ -758,12 +791,6 @@ void AeccComponent::bus_task_() {
 #endif
 
     this->ticks_since_housekeeping_ = 0;
-
-    // A trace takes the housekeeping turn while it records; the rest only gets the gaps.
-    if (this->trace_running_ && this->ports_ok_ && (int32_t) (millis() - this->trace_next_) >= 0) {
-      this->trace_step_();
-      continue;
-    }
 
     if (this->backup_running_) {
       this->backup_step_();

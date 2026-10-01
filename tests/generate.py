@@ -86,6 +86,7 @@ FIXED = {
     "meter/type": "rs071",
     "meter/uart_id": "bus_meter",
     "datalogger/host": "192.0.2.10",
+    "trace/export_trigger": "30",
 }
 
 

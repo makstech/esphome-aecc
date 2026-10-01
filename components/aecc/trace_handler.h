@@ -11,8 +11,8 @@
 namespace esphome {
 namespace aecc {
 
-/// Serves the last recorded trace as CSV. Recording is started by its button, so a trace
-/// lines up with whatever was done to the battery while it ran.
+/// Serves the last recorded trace as CSV. Recording is started by its button, or by export
+/// when `export_trigger` is set.
 class TraceHandler : public AsyncWebHandler, public Component {
  public:
   TraceHandler(web_server_base::WebServerBase *base) : base_(base) {}
