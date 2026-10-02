@@ -133,7 +133,13 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   }
 
   if (fresh && this->masked_()) {
-    // Hold the command: the reading is the push's blip.
+    // Hold the command, since the reading may be the push's blip; but pushes come in bursts,
+    // and export beyond what they could add would otherwise go uncorrected for seconds.
+    const float floor = (float) (this->grid_target_ - this->push_excess_ - PUSH_EXPORT_MARGIN_W);
+    if (this->last_grid_ < floor && this->warm() && !this->frozen_)
+      this->command_ = this->law_ == ControlLaw::PREDICTIVE
+                           ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
+                           : this->step_(this->last_grid_, soc, soc_valid);
   } else if (fresh) {
     this->anchor_if_lost_();
     // Above the target only what has held for rise_ms_ counts; below it, all of it.
@@ -221,6 +227,8 @@ void Controller::anchor_if_lost_() {
 void Controller::note_readback_(int16_t read) {
   const bool agrees = read == this->written_;
   if (!agrees && this->guard_agreed_) {
+    const int32_t excess = std::max<int32_t>(0, (int32_t) read - this->written_);
+    this->push_excess_ = this->masked_() ? std::max(this->push_excess_, excess) : excess;
     this->pushed_ = true;
     this->pushed_at_ = millis();
     this->pushes_++;

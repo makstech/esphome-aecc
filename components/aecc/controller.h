@@ -258,6 +258,10 @@ class Controller {
   static const uint32_t GUARD_EVERY_MS = 100;
   /// Measured: a push shows on the meter for about half a second after it lands.
   static const uint32_t PUSH_MASK_MS = 800;
+  /// A masked reading this far past what the pushes could add is the house's own export.
+  static const int16_t PUSH_EXPORT_MARGIN_W = 50;
+  /// How far the pushes in the current mask raised the setpoint over ours.
+  int32_t push_excess_{0};
   uint32_t guarded_at_{0};
   uint32_t pushed_at_{0};
   bool pushed_{false};
