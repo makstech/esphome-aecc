@@ -386,7 +386,8 @@ quiet. So one number does two jobs, and zero breaks both of them.
 A small charging value is the quietest non-zero option, and charging can never push
 anything into the grid. Too small counts as zero, though: the battery treats `-10` as
 nothing at all. The default `-50` is about the smallest it listens to. To park the battery
-idle, use Manual at 0 W rather than a smaller resting value.
+idle, use Manual at 0 W rather than a smaller resting value. Zero export rounds a smaller
+charge up to 50 W for the same reason, so a small PV surplus does not leak out.
 
 The datalogger also pushes that value into the battery every few seconds, over whatever
 the ESP32 last commanded. So between control ticks the ESP32 checks its setpoint every

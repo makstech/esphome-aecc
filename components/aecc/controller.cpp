@@ -153,6 +153,8 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
       this->command_ = this->predict_step_(grid - this->pv_rise_(), soc, soc_valid);
     else
       this->command_ = this->step_(grid, soc, soc_valid);
+    if (this->command_ < -CHARGE_DEADBAND_W && this->command_ > -MIN_CHARGE_W)
+      this->command_ = this->clamp_(-MIN_CHARGE_W, soc, soc_valid);
   } else {
     const uint32_t age = this->meter_ == nullptr ? UINT32_MAX : this->meter_->age_ms();
     if (age < this->stale_after_ms_)

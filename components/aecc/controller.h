@@ -258,6 +258,11 @@ class Controller {
   static const uint32_t GUARD_EVERY_MS = 100;
   /// Measured: a push shows on the meter for about half a second after it lands.
   static const uint32_t PUSH_MASK_MS = 800;
+  /// The inverter leaves a charge setpoint smaller than this at rest, so a small PV
+  /// surplus would leak out; Zero export rounds such a charge up to it.
+  static const int16_t MIN_CHARGE_W = 50;
+  /// Below this the command is noise around zero and is left alone.
+  static const int16_t CHARGE_DEADBAND_W = 15;
   /// A masked reading this far past what the pushes could add is the house's own export.
   static const int16_t PUSH_EXPORT_MARGIN_W = 50;
   /// How far the pushes in the current mask raised the setpoint over ours.
