@@ -83,6 +83,8 @@ CONF_MAX_DISCHARGE = "max_discharge"
 CONF_MAX_CHARGE = "max_charge"
 CONF_MIN_SOC = "min_soc"
 CONF_MAX_SOC = "max_soc"
+CONF_CHARGE_TAPER = "charge_taper"
+CONF_SOC = "soc"
 CONF_RAMP_UP = "ramp_up"
 CONF_STALE_AFTER = "stale_after"
 CONF_REGISTER = "register"
@@ -409,6 +411,14 @@ WORK_MODES = {
     "Custom": "CUSTOM",
 }
 
+
+def _rising_soc(points):
+    socs = [p[CONF_SOC] for p in points]
+    if socs != sorted(set(socs)):
+        raise cv.Invalid("charge_taper points must be in rising soc order")
+    return points
+
+
 CONTROL_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Controller),
@@ -440,6 +450,16 @@ CONTROL_SCHEMA = cv.Schema(
         cv.Optional(CONF_MAX_CHARGE, default=2400): cv.int_range(min=0, max=20000),
         cv.Optional(CONF_MIN_SOC, default=15): cv.percentage_int,
         cv.Optional(CONF_MAX_SOC, default=90): cv.percentage_int,
+        # Under a high charge current the highest cell reaches the BMS's full voltage before
+        # the pack is full, and the BMS then resets its state of charge to 100 %.
+        cv.Optional(CONF_CHARGE_TAPER): cv.All(
+            cv.ensure_list(cv.Schema({
+                cv.Required(CONF_SOC): cv.percentage_int,
+                cv.Required(CONF_MAX_CHARGE): cv.int_range(min=0, max=20000),
+            })),
+            cv.Length(min=1),
+            _rising_soc,
+        ),
         cv.Optional(CONF_RAMP_UP, default=0.35): cv.float_range(min=0.01, max=1.0),
         cv.Optional(CONF_STALE_AFTER, default="5s"): cv.positive_time_period_milliseconds,
         # Always created, because it is the only way to start the loop.
@@ -750,6 +770,8 @@ async def to_code(config):
         cg.add(control.set_max_charge(conf[CONF_MAX_CHARGE]))
         cg.add(control.set_min_soc(conf[CONF_MIN_SOC]))
         cg.add(control.set_max_soc(conf[CONF_MAX_SOC]))
+        for point in conf.get(CONF_CHARGE_TAPER, []):
+            cg.add(control.add_charge_taper(point[CONF_SOC], point[CONF_MAX_CHARGE]))
         cg.add(control.set_ramp_up(conf[CONF_RAMP_UP]))
         cg.add(control.set_stale_after(conf[CONF_STALE_AFTER]))
         cg.add(control.set_law(conf[CONF_LAW]))

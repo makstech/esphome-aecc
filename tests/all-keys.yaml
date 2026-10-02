@@ -77,6 +77,11 @@ aecc:
     max_soc: 90
     ramp_up: 0.35
     stale_after: 5s
+    charge_taper:
+      - soc: 85
+        max_charge: 1200
+      - soc: 95
+        max_charge: 500
     mode_select: Battery mode
     setpoint_number: Battery power
     law_select: Control law

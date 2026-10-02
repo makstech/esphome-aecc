@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace esphome {
 namespace aecc {
@@ -80,6 +81,9 @@ class Controller {
   void set_stale_after(uint32_t ms) { this->stale_after_ms_ = ms; }
   void set_min_soc(uint8_t pct) { this->min_soc_ = pct; }
   void set_max_soc(uint8_t pct) { this->max_soc_ = pct; }
+  /// A point of the charge taper, added in rising SOC order: the charge limit runs in a
+  /// straight line between points and holds the last one above it.
+  void add_charge_taper(uint8_t soc, int32_t watts) { this->taper_.push_back({soc, watts}); }
 
   /// Negative asks the inverter to export that many watts. Whether that is legal is
   /// the installation's business, not this component's: bound it with the number's
@@ -141,6 +145,8 @@ class Controller {
   int16_t step_(float grid_w, uint16_t soc, bool soc_valid);
   /// The state of charge window, as the bounds the command may take.
   void limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi) const;
+  /// The charge limit the taper sets at this SOC; INT32_MAX below its first point.
+  int32_t taper_limit_(uint16_t soc) const;
   /// Commands nothing and forgets everything the loop was carrying.
   bool read_meter_(float *watts);
   void idle_();
@@ -205,6 +211,11 @@ class Controller {
   size_t modelled_head_{0};
   uint8_t min_soc_{15};
   uint8_t max_soc_{90};
+  struct TaperPoint {
+    uint8_t soc;
+    int32_t watts;
+  };
+  std::vector<TaperPoint> taper_;
 
   int32_t grid_target_{60};
   int32_t max_discharge_{600};

@@ -494,6 +494,7 @@ its default.
 | `max_charge` | `2400` | Watts, in Zero export and Manual |
 | `min_soc` | `15%` | The reserve: no discharging below it |
 | `max_soc` | `90%` | The ceiling: no charging above it |
+| `charge_taper` | | `soc` and `max_charge` points the charge limit follows as the pack fills: a straight line between points, the last one held above it, no limit below the first. Under a high charge current the highest cell reaches the BMS's full voltage early and the BMS resets the pack to 100 %. It limits PV absorption too, so a surplus above it near the top needs curtailing |
 | `ramp_up` | `0.35` | The share of an import error closed per half second while raising discharge. A move toward export is corrected in full at once |
 | `stale_after` | `5s` | With no meter reading for this long, the loop commands 0 |
 | `law` | `predictive` | How the error becomes a command. `classic` adds a share of it to the last command each tick; `predictive` adds it to what a model of the inverter says the battery is delivering, so it does not ask twice for power already on its way |

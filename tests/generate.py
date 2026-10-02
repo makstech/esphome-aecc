@@ -174,7 +174,9 @@ CONTROL_NUMBERS = tuple(hub.CONTROL_NUMBERS)
 
 def render():
     title = lambda k: k.replace("_", " ")
-    head = HEAD.format(top=options(""), **{b: options(b) for b in ("backup", "trace", "datalogger", "meter", "control")})
+    blocks = {b: options(b) for b in ("backup", "trace", "datalogger", "meter", "control")}
+    blocks["control"] += "\n    charge_taper:\n      - soc: 85\n        max_charge: 1200\n      - soc: 95\n        max_charge: 500"
+    head = HEAD.format(top=options(""), **blocks)
     out = head.splitlines()
     out += [f"    {k}_number: {title(k)}" for k in CONTROL_NUMBERS]
     out += [f"  {k}_number: {title(k)}" for k in settings.NUMBERS]
@@ -246,6 +248,8 @@ def missing_keys(rendered):
     for path, _, _ in KEYS:
         node = aecc
         for part in path.split("/"):
+            if isinstance(node, list):
+                node = node[0] if node else None
             node = node.get(part) if isinstance(node, dict) else None
         if node is None:
             absent.append(path)

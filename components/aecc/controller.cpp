@@ -32,11 +32,23 @@ float Controller::filter_(float sample) {
   return within[n / 2];
 }
 
+int32_t Controller::taper_limit_(uint16_t soc) const {
+  if (this->taper_.empty() || soc < this->taper_.front().soc)
+    return INT32_MAX;
+  for (size_t i = 1; i < this->taper_.size(); i++) {
+    const TaperPoint &a = this->taper_[i - 1], &b = this->taper_[i];
+    if (soc < b.soc)
+      return a.watts + (b.watts - a.watts) * (int32_t) (soc - a.soc) / (int32_t) (b.soc - a.soc);
+  }
+  return this->taper_.back().watts;
+}
+
 void Controller::limits_(uint16_t soc, bool soc_valid, int32_t *lo, int32_t *hi) const {
   *lo = -this->max_charge_;
   *hi = this->max_discharge_;
   if (!soc_valid)
     return;
+  *lo = -std::min(this->max_charge_, this->taper_limit_(soc));
   if (soc <= this->min_soc_)
     *hi = 0;  // empty: may still charge, must not discharge
   if (soc >= this->max_soc_)
