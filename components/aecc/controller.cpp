@@ -93,6 +93,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     this->reset_filter_();
     std::fill(this->modelled_, this->modelled_ + MAX_DELAY_TICKS, 0.0f);
     std::fill(this->pv_hist_, this->pv_hist_ + MAX_DELAY_TICKS, NAN);
+    std::fill(this->over_hist_, this->over_hist_ + MAX_DELAY_TICKS, INT16_MAX);
     // Whatever the register holds from before is not a push.
     this->guard_agreed_ = false;
   }
@@ -135,7 +136,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   if (fresh && this->masked_()) {
     // Hold the command, since the reading may be the push's blip; but pushes come in bursts,
     // and export beyond what they could add would otherwise go uncorrected for seconds.
-    const float floor = (float) (this->grid_target_ - this->push_excess_ - PUSH_EXPORT_MARGIN_W);
+    const float floor = (float) (this->grid_target_ - this->push_explains_() - PUSH_EXPORT_MARGIN_W);
     if (this->last_grid_ < floor && this->warm() && !this->frozen_)
       this->command_ = this->law_ == ControlLaw::PREDICTIVE
                            ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
@@ -263,15 +264,22 @@ void Controller::read_telemetry_(ModbusRtu *inverter) {
     const int32_t pv = -(int32_t) (int16_t) regs[reg::PV_POWER - reg::BATTERY_POWER];
     this->pv_w_ = (int16_t) std::min<int32_t>(pv, INT16_MAX);
   }
-  this->pv_head_ = (this->pv_head_ + 1) % MAX_DELAY_TICKS;
-  this->pv_hist_[this->pv_head_] = this->battery_fresh_ ? (float) this->pv_w_ : NAN;
+  this->telemetry_head_ = (this->telemetry_head_ + 1) % MAX_DELAY_TICKS;
+  this->pv_hist_[this->telemetry_head_] = this->battery_fresh_ ? (float) this->pv_w_ : NAN;
+  this->over_hist_[this->telemetry_head_] =
+      this->battery_fresh_ ? (int16_t) std::max<int32_t>(0, (int32_t) this->battery_w_ - this->written_) : INT16_MAX;
+}
+
+int32_t Controller::push_explains_() const {
+  const size_t back = (this->telemetry_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
+  return std::min<int32_t>(this->push_excess_, this->over_hist_[back]);
 }
 
 float Controller::pv_rise_() const {
   if (!this->pv_feed_forward_ || this->delay_ticks_ == 0)
     return 0.0f;
-  const float now = this->pv_hist_[this->pv_head_];
-  const float then = this->pv_hist_[(this->pv_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS];
+  const float now = this->pv_hist_[this->telemetry_head_];
+  const float then = this->pv_hist_[(this->telemetry_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS];
   // NAN compares false, so a failed read on either side adds nothing.
   return now > then ? now - then : 0.0f;
 }

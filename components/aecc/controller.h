@@ -244,9 +244,12 @@ class Controller {
   int16_t pv_w_{0};
   bool battery_fresh_{false};
   bool pv_feed_forward_{true};
-  /// PV port power per tick, newest at pv_head_; NAN where the read failed.
+  /// PV port power per tick, newest at telemetry_head_; NAN where the read failed.
   float pv_hist_[MAX_DELAY_TICKS]{};
-  size_t pv_head_{0};
+  /// How far the battery ran above the last write, per tick alongside pv_hist_; INT16_MAX
+  /// where the read failed.
+  int16_t over_hist_[MAX_DELAY_TICKS]{};
+  size_t telemetry_head_{0};
   uint32_t pushes_{0};
   static const int16_t FOLLOW_TOLERANCE_W = 150;
   static const uint8_t LOST_TICKS = 4;
@@ -267,6 +270,9 @@ class Controller {
   static const int16_t PUSH_EXPORT_MARGIN_W = 50;
   /// How far the pushes in the current mask raised the setpoint over ours.
   int32_t push_excess_{0};
+  /// The part of a masked reading the pushes can account for: what they asked for, as far as
+  /// the battery delivered it by the time the meter took the reading.
+  int32_t push_explains_() const;
   uint32_t guarded_at_{0};
   uint32_t pushed_at_{0};
   bool pushed_{false};
