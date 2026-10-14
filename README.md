@@ -491,7 +491,7 @@ its default.
 | Key | Default | What it does |
 |---|---|---|
 | `rate` | `4Hz` | How often the loop runs; the meter refreshes about every 250 ms |
-| `filter_window` | `750ms` | The loop acts on the median meter reading over this long |
+| `filter_window` | `750ms` | The loop acts on the median meter reading over this long; a reading 60 W or more below the grid target is acted on at once |
 | `grid_target` | `60` | Watts to keep importing in Zero export |
 | `max_discharge` | `600` | Watts, in Zero export and Manual |
 | `max_charge` | `2400` | Watts, in Zero export and Manual |

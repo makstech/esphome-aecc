@@ -266,6 +266,9 @@ class Controller {
   static const int16_t MIN_CHARGE_W = 50;
   /// Below this the command is noise around zero and is left alone.
   static const int16_t CHARGE_DEADBAND_W = 15;
+  /// A reading this far below the target is acted on as read: the median lags a step down by
+  /// half its window.
+  static const int16_t RAW_EXPORT_W = 60;
   /// A masked reading this far past what the pushes could add is the house's own export.
   static const int16_t PUSH_EXPORT_MARGIN_W = 50;
   /// How far the pushes in the current mask raised the setpoint over ours.

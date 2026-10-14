@@ -145,9 +145,10 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     this->anchor_if_lost_();
     // Above the target only what has held for rise_ms_ counts; below it, all of it.
     const float target = (float) this->grid_target_;
-    const float grid = this->filtered_ > target
-                           ? std::max(target, std::min(this->filtered_, this->rise_floor_))
-                           : this->filtered_;
+    float grid = this->filtered_ > target ? std::max(target, std::min(this->filtered_, this->rise_floor_))
+                                          : this->filtered_;
+    if (this->last_grid_ < target - RAW_EXPORT_W)
+      grid = std::min(grid, this->last_grid_);
     if (this->frozen_ || !this->warm())
       this->command_ = 0;
     else if (this->law_ == ControlLaw::PREDICTIVE)
