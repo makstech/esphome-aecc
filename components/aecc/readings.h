@@ -21,6 +21,7 @@ enum class Metric : uint8_t {
   LOOP_HZ,
   ENERGY_CHARGED,
   ENERGY_DISCHARGED,
+  RISE_DELAY_S,
 };
 
 class AeccSensor : public sensor::Sensor, public Component, public AeccDevice {

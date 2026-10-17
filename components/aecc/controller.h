@@ -38,6 +38,14 @@ enum class ControlLaw : uint8_t {
 class Controller {
  public:
   static const size_t MAX_SAMPLES = 32;
+  /// The rise delay's history: two minutes at 4 Hz.
+  static const size_t MAX_RISE_SAMPLES = 480;
+  /// The house's own draw falling this far is a load switching off.
+  static const int16_t SWITCH_OFF_W = 500;
+  /// A switch-off is seen for a couple of seconds; it doubles the rise delay once.
+  static const uint32_t BACK_OFF_EVERY_MS = 5000;
+  /// The rise delay halves after this long without a load switching off.
+  static const uint32_t SWITCHING_QUIET_MS = 300000;
   /// One sample is its own median. Commanding on it means a single glitched
   /// reading at boot can ask for the full discharge cap.
   static const size_t WARMUP_SAMPLES = 3;
@@ -58,6 +66,10 @@ class Controller {
   /// Import must persist this long before zero export covers it; export is corrected at once.
   void set_rise_delay(uint32_t ms) { this->rise_ms_ = ms; }
   uint32_t rise_delay() const { return this->rise_ms_; }
+  /// How far export from loads switching off can double the rise delay.
+  void set_rise_delay_limit(uint32_t ms) { this->rise_limit_ms_ = ms; }
+  /// The rise delay in force: longer than the configured one while a load keeps switching.
+  uint32_t effective_rise_delay() const { return std::max(this->rise_ms_, this->rise_backoff_ms_); }
   void set_ramp_up(float fraction) {
     this->ramp_up_ = fraction;
     this->recompute_timing_();
@@ -158,6 +170,12 @@ class Controller {
   void read_telemetry_(ModbusRtu *inverter);
   /// How much the PV port rose since the meter took its reading.
   float pv_rise_() const;
+  void note_export_() {
+    if (this->command_ > 0)
+      this->exported_at_ = millis();
+  }
+  /// A load the battery was covering switched off: doubles the rise delay.
+  void back_off_();
   /// Writes command_ and, occasionally, checks the inverter is acting on it.
   void deliver_(ModbusRtu *inverter);
   /// Corrections are sized for the rate the law was validated at. The inverter takes about
@@ -190,7 +208,13 @@ class Controller {
   uint32_t period_ms_{VALIDATED_PERIOD_MS};
   uint32_t window_ms_{1500};
   uint32_t rise_ms_{2000};
-  float rise_floor_{0};
+  uint32_t rise_limit_ms_{120000};
+  uint32_t rise_backoff_ms_{0};
+  uint32_t backed_off_at_{0};
+  uint32_t switched_off_at_{0};
+  uint32_t exported_at_{0};
+  /// The lowest the house alone drew throughout the rise delay.
+  float house_floor_{0};
   uint32_t stale_after_ms_{5000};
   float ramp_up_{0.35f};
   float ramp_per_tick_{0.35f};
@@ -232,6 +256,11 @@ class Controller {
   uint32_t stamps_[MAX_SAMPLES]{};
   size_t sample_count_{0};
   size_t sample_head_{0};
+  /// The readings with the battery's part taken out: what the house alone drew.
+  float rise_house_[MAX_RISE_SAMPLES]{};
+  uint32_t rise_stamps_[MAX_RISE_SAMPLES]{};
+  size_t rise_count_{0};
+  size_t rise_head_{0};
 
   float last_grid_{0};
   float filtered_{0};
@@ -269,6 +298,9 @@ class Controller {
   /// A reading this far below the target is acted on as read: the median lags a step down by
   /// half its window.
   static const int16_t RAW_EXPORT_W = 60;
+  /// When a rise the battery has not taken on ends, the meter falls back to at least this, or
+  /// to the target if lower.
+  static const int16_t RISE_MARGIN_W = 50;
   /// A masked reading this far past what the pushes could add is the house's own export.
   static const int16_t PUSH_EXPORT_MARGIN_W = 50;
   /// How far the pushes in the current mask raised the setpoint over ours.

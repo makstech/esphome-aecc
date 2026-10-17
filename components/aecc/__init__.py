@@ -395,6 +395,7 @@ CONF_PREDICTIVE_GAIN = "predictive_gain"
 CONF_ACTUATOR_LAG = "actuator_lag"
 CONF_METER_DELAY = "meter_delay"
 CONF_RISE_DELAY = "rise_delay"
+CONF_RISE_DELAY_LIMIT = "rise_delay_limit"
 CONF_PV_FEED_FORWARD = "pv_feed_forward"
 CONF_EXPORT_TRIGGER = "export_trigger"
 # The loop's tuning as controls, each starting from its option above.
@@ -433,6 +434,10 @@ CONTROL_SCHEMA = cv.Schema(
         cv.Optional(CONF_ACTUATOR_LAG, default="400ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_METER_DELAY, default="300ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_RISE_DELAY, default="2000ms"): cv.positive_time_period_milliseconds,
+        # The controller keeps two minutes of readings at 4 Hz.
+        cv.Optional(CONF_RISE_DELAY_LIMIT, default="120s"): cv.All(
+            cv.positive_time_period_milliseconds, cv.Range(max=cv.TimePeriod(seconds=120))
+        ),
         # PV on the battery's own port reaches the grid without passing the setpoint, so a
         # rise is cancelled from the inverter's reading instead of waiting for the meter.
         cv.Optional(CONF_PV_FEED_FORWARD, default=True): cv.boolean,
@@ -779,6 +784,7 @@ async def to_code(config):
         cg.add(control.set_actuator_lag(conf[CONF_ACTUATOR_LAG]))
         cg.add(control.set_meter_delay(conf[CONF_METER_DELAY]))
         cg.add(control.set_rise_delay(conf[CONF_RISE_DELAY]))
+        cg.add(control.set_rise_delay_limit(conf[CONF_RISE_DELAY_LIMIT]))
         cg.add(control.set_pv_feed_forward(conf[CONF_PV_FEED_FORWARD]))
         cg.add(var.set_control(control))
 

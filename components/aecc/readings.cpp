@@ -61,6 +61,9 @@ void AeccSensor::publish_metric_() {
     case Metric::ENERGY_DISCHARGED:
       this->publish_state((float) this->parent_->energy_discharged_kwh());
       break;
+    case Metric::RISE_DELAY_S:
+      this->publish_state(c->effective_rise_delay() / 1000.0f);
+      break;
     case Metric::REGISTER:
       break;
   }

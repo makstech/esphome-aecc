@@ -16,15 +16,45 @@ float Controller::filter_(float sample) {
   this->sample_head_ = (this->sample_head_ + 1) % MAX_SAMPLES;
   if (this->sample_count_ < MAX_SAMPLES)
     this->sample_count_++;
+  // The battery as the model has it when the meter took the reading, taken out again.
+  const size_t back = (this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
+  const float house = sample + this->modelled_[back];
+  this->rise_house_[this->rise_head_] = house;
+  this->rise_stamps_[this->rise_head_] = now;
+  this->rise_head_ = (this->rise_head_ + 1) % MAX_RISE_SAMPLES;
+  if (this->rise_count_ < MAX_RISE_SAMPLES)
+    this->rise_count_++;
+
+  const uint32_t rise = this->effective_rise_delay();
+  this->house_floor_ = house;
+  // A load switching off: the last second's readings all below the two seconds' before.
+  float before = INFINITY, after = house;
+  for (size_t i = 0; i < this->rise_count_; i++) {
+    const uint32_t age = now - this->rise_stamps_[i];
+    if (age <= rise)
+      this->house_floor_ = std::min(this->house_floor_, this->rise_house_[i]);
+    if (age <= 1000)
+      after = std::max(after, this->rise_house_[i]);
+    else if (age <= 3000)
+      before = std::min(before, this->rise_house_[i]);
+  }
+  if (before < INFINITY && before - after >= SWITCH_OFF_W) {
+    this->switched_off_at_ = now;
+    // Export as it went: the battery was covering it.
+    if (now - this->exported_at_ <= 3000)
+      this->back_off_();
+  }
+  if (this->rise_backoff_ms_ > this->rise_ms_ && now - this->switched_off_at_ >= SWITCHING_QUIET_MS) {
+    this->rise_backoff_ms_ /= 2;
+    this->switched_off_at_ = now;
+    ESP_LOGD(TAG, "no load switching off: rise delay %u ms", (unsigned) this->effective_rise_delay());
+  }
 
   float within[MAX_SAMPLES];
   size_t n = 0;
-  this->rise_floor_ = sample;
   for (size_t i = 0; i < this->sample_count_; i++) {
     if (now - this->stamps_[i] <= this->window_ms_)
       within[n++] = this->samples_[i];
-    if (now - this->stamps_[i] <= this->rise_ms_)
-      this->rise_floor_ = std::min(this->rise_floor_, this->samples_[i]);
   }
   if (n == 0)
     return sample;
@@ -137,24 +167,36 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     // Hold the command, since the reading may be the push's blip; but pushes come in bursts,
     // and export beyond what they could add would otherwise go uncorrected for seconds.
     const float floor = (float) (this->grid_target_ - this->push_explains_() - PUSH_EXPORT_MARGIN_W);
-    if (this->last_grid_ < floor && this->warm() && !this->frozen_)
+    if (this->last_grid_ < floor && this->warm() && !this->frozen_) {
+      this->note_export_();
       this->command_ = this->law_ == ControlLaw::PREDICTIVE
                            ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
                            : this->step_(this->last_grid_, soc, soc_valid);
+    }
   } else if (fresh) {
     this->anchor_if_lost_();
-    // Above the target only what has held for rise_ms_ counts; below it, all of it.
     const float target = (float) this->grid_target_;
-    float grid = this->filtered_ > target ? std::max(target, std::min(this->filtered_, this->rise_floor_))
-                                          : this->filtered_;
-    if (this->last_grid_ < target - RAW_EXPORT_W)
+    float grid = this->filtered_;
+    if (this->last_grid_ < target - RAW_EXPORT_W) {
       grid = std::min(grid, this->last_grid_);
-    if (this->frozen_ || !this->warm())
+      this->note_export_();
+    }
+    auto law = [&](float grid_w) {
+      return this->law_ == ControlLaw::PREDICTIVE ? this->predict_step_(grid_w - this->pv_rise_(), soc, soc_valid)
+                                                  : this->step_(grid_w, soc, soc_valid);
+    };
+    if (this->frozen_ || !this->warm()) {
       this->command_ = 0;
-    else if (this->law_ == ControlLaw::PREDICTIVE)
-      this->command_ = this->predict_step_(grid - this->pv_rise_(), soc, soc_valid);
-    else
-      this->command_ = this->step_(grid, soc, soc_valid);
+    } else {
+      int16_t next = law(grid);
+      // Above the target the battery takes on only what the house drew throughout the rise
+      // delay, so when a shorter rise ends the meter falls back no lower than the margin.
+      if (grid > target) {
+        const float margin = std::min(target, (float) RISE_MARGIN_W);
+        next = std::min(next, std::max(law(target), (int16_t) (this->house_floor_ - margin)));
+      }
+      this->command_ = next;
+    }
     if (this->command_ < -CHARGE_DEADBAND_W && this->command_ > -MIN_CHARGE_W)
       this->command_ = this->clamp_(-MIN_CHARGE_W, soc, soc_valid);
   } else {
@@ -169,10 +211,23 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   this->deliver_(inverter);
 }
 
+void Controller::back_off_() {
+  const uint32_t now = millis();
+  if (now - this->backed_off_at_ < BACK_OFF_EVERY_MS)
+    return;
+  this->backed_off_at_ = now;
+  const uint32_t was = this->effective_rise_delay();
+  this->rise_backoff_ms_ = std::min(this->rise_limit_ms_, 2 * was);
+  if (this->effective_rise_delay() != was)
+    ESP_LOGD(TAG, "export from a load switching off: rise delay %u ms", (unsigned) this->effective_rise_delay());
+}
+
 void Controller::reset_filter_() {
   // filter_() scans samples_[0, sample_count_), so the head has to go back too.
   this->sample_count_ = 0;
   this->sample_head_ = 0;
+  this->rise_count_ = 0;
+  this->rise_head_ = 0;
   // The staleness clock would otherwise count the whole gap.
   this->frozen_since_ = millis();
   this->frozen_ = false;

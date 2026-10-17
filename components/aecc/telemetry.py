@@ -71,6 +71,13 @@ DIAGNOSTICS = {
         device_class=DEVICE_CLASS_DURATION, state_class=STATE_CLASS_MEASUREMENT,
         entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
     ),
+    "effective_rise_delay": dict(
+        metric="RISE_DELAY_S", name="Effective rise delay", interval="5s",
+        needs=("meter", "control"),
+        unit_of_measurement=UNIT_SECOND, accuracy_decimals=0,
+        device_class=DEVICE_CLASS_DURATION, state_class=STATE_CLASS_MEASUREMENT,
+        entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+    ),
     "loop_rate": dict(
         metric="LOOP_HZ", name="Control loop rate", interval="5s", needs=("control",),
         unit_of_measurement=UNIT_HERTZ, accuracy_decimals=1,

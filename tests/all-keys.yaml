@@ -69,6 +69,7 @@ aecc:
     actuator_lag: 400ms
     meter_delay: 300ms
     rise_delay: 2000ms
+    rise_delay_limit: 120s
     pv_feed_forward: true
     grid_target: 60
     max_discharge: 600
@@ -148,6 +149,7 @@ aecc:
   meter_power_filtered_sensor: Meter grid power, filtered
   commanded_power_sensor: Commanded power
   meter_age_sensor: Meter sample age
+  effective_rise_delay_sensor: Effective rise delay
   loop_rate_sensor: Control loop rate
   control_effective_sensor: Setpoint honoured
   meter_ok_sensor: Meter OK

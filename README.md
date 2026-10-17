@@ -117,6 +117,7 @@ configured, so a setup without a meter has no meter readings.
 | `meter_power_sensor` | Meter grid power | What your meter is reading right now |
 | `meter_power_filtered_sensor` | Meter grid power, filtered | The same after smoothing, which is what the loop acts on |
 | `commanded_power_sensor` | Commanded power | What the loop is asking the battery for |
+| `effective_rise_delay_sensor` | Effective rise delay | The rise delay in force, seconds; longer than `rise_delay` while a load keeps switching |
 | `meter_age_sensor` | Meter sample age | Seconds since the last good meter reading |
 | `loop_rate_sensor` | Control loop rate | How often the loop is actually running, Hz |
 
@@ -504,7 +505,8 @@ its default.
 | `predictive_gain` | `0.7` | The share of an import error the predictive law corrects per tick; a move toward export is corrected whole |
 | `actuator_lag` | `400ms` | The predictive model: how fast the inverter follows a new setpoint |
 | `meter_delay` | `300ms` | The predictive model: how late the meter shows it. Too long double-counts and oscillates |
-| `rise_delay` | `2000ms` | How long import has to persist before zero export covers it, so a brief load pulse does not leave a spike of export when it stops. Export is corrected at once |
+| `rise_delay` | `2000ms` | How long import has to persist before zero export covers it, so a brief load pulse does not leave a spike of export when it stops. Export is corrected at once; a rise cuts a charge at once too, as far as the house alone would still import |
+| `rise_delay_limit` | `120s` | Export while discharging, from a load switching off, doubles the rise delay up to this; it halves again after 5 minutes without a load of 500 W or more switching off. A load that keeps switching, like a hob's power regulator, is then left to the grid. At or below `rise_delay`, the delay never grows |
 | `pv_feed_forward` | `true` | With the `predictive` law, a rise on the battery's PV port is absorbed as the inverter reports it, before the meter shows it as export. A fall is left to the meter |
 | `mode_select` | `Battery mode` | The mode dropdown |
 | `setpoint_number` | `Battery power` | The Manual target in watts, positive discharging |
