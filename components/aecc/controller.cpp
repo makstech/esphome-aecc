@@ -16,9 +16,7 @@ float Controller::filter_(float sample) {
   this->sample_head_ = (this->sample_head_ + 1) % MAX_SAMPLES;
   if (this->sample_count_ < MAX_SAMPLES)
     this->sample_count_++;
-  // The battery as the model has it when the meter took the reading, taken out again.
-  const size_t back = (this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
-  const float house = sample + this->modelled_[back];
+  const float house = sample + this->battery_at_reading_();
   this->rise_house_[this->rise_head_] = house;
   this->rise_stamps_[this->rise_head_] = now;
   this->rise_head_ = (this->rise_head_ + 1) % MAX_RISE_SAMPLES;
@@ -27,21 +25,20 @@ float Controller::filter_(float sample) {
 
   const uint32_t rise = this->effective_rise_delay();
   this->house_floor_ = house;
-  // A load switching off: the last second's readings all below the two seconds' before.
   float before = INFINITY, after = house;
   for (size_t i = 0; i < this->rise_count_; i++) {
     const uint32_t age = now - this->rise_stamps_[i];
     if (age <= rise)
       this->house_floor_ = std::min(this->house_floor_, this->rise_house_[i]);
-    if (age <= 1000)
+    if (age <= SWITCH_AFTER_MS)
       after = std::max(after, this->rise_house_[i]);
-    else if (age <= 3000)
+    else if (age <= SWITCH_BEFORE_MS)
       before = std::min(before, this->rise_house_[i]);
   }
   if (before < INFINITY && before - after >= SWITCH_OFF_W) {
     this->switched_off_at_ = now;
     // Export as it went: the battery was covering it.
-    if (now - this->exported_at_ <= 3000)
+    if (now - this->exported_at_ <= SWITCH_BEFORE_MS)
       this->back_off_();
   }
   if (this->rise_backoff_ms_ > this->rise_ms_ && now - this->switched_off_at_ >= SWITCHING_QUIET_MS) {
@@ -98,12 +95,10 @@ int16_t Controller::step_(float grid_w, uint16_t soc, bool soc_valid) {
 }
 
 int16_t Controller::predict_step_(float grid_w, uint16_t soc, bool soc_valid) {
-  // What the battery was delivering when the meter took the reading being acted on.
-  const size_t back = (this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS;
   const float error = grid_w - (float) this->grid_target_;
   // Toward export the whole error at once; toward import a share, as a margin for a model
   // that is only approximately the inverter.
-  return this->clamp_(this->modelled_[back] + error * (error < 0 ? 1.0f : this->gain_), soc, soc_valid);
+  return this->clamp_(this->battery_at_reading_() + error * (error < 0 ? 1.0f : this->gain_), soc, soc_valid);
 }
 
 void Controller::advance_model_() {
@@ -168,7 +163,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     // and export beyond what they could add would otherwise go uncorrected for seconds.
     const float floor = (float) (this->grid_target_ - this->push_explains_() - PUSH_EXPORT_MARGIN_W);
     if (this->last_grid_ < floor && this->warm() && !this->frozen_) {
-      this->note_export_();
+      this->note_export_(this->last_grid_ + (float) this->push_explains_());
       this->command_ = this->law_ == ControlLaw::PREDICTIVE
                            ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
                            : this->step_(this->last_grid_, soc, soc_valid);
@@ -179,7 +174,7 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
     float grid = this->filtered_;
     if (this->last_grid_ < target - RAW_EXPORT_W) {
       grid = std::min(grid, this->last_grid_);
-      this->note_export_();
+      this->note_export_(this->last_grid_);
     }
     auto law = [&](float grid_w) {
       return this->law_ == ControlLaw::PREDICTIVE ? this->predict_step_(grid_w - this->pv_rise_(), soc, soc_valid)
@@ -209,6 +204,25 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   }
 
   this->deliver_(inverter);
+}
+
+void Controller::note_export_(float reading) {
+  if (this->command_ <= 0)
+    return;
+  const uint32_t now = millis();
+  this->exported_at_ = now;
+  // Judged here too: a push right after the drop masks the readings filter_() would see it in,
+  // and by the next unmasked one the drop has aged into the window it compares against.
+  float before = INFINITY;
+  for (size_t i = 0; i < this->rise_count_; i++) {
+    const uint32_t age = now - this->rise_stamps_[i];
+    if (age > SWITCH_AFTER_MS && age <= SWITCH_BEFORE_MS)
+      before = std::min(before, this->rise_house_[i]);
+  }
+  if (before < INFINITY && before - (reading + this->battery_at_reading_()) >= SWITCH_OFF_W) {
+    this->switched_off_at_ = now;
+    this->back_off_();
+  }
 }
 
 void Controller::back_off_() {

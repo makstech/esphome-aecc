@@ -40,8 +40,11 @@ class Controller {
   static const size_t MAX_SAMPLES = 32;
   /// The rise delay's history: two minutes at 4 Hz.
   static const size_t MAX_RISE_SAMPLES = 480;
-  /// The house's own draw falling this far is a load switching off.
+  /// The house's own draw falling this far is a load switching off: the readings of the last
+  /// second all below those of the two seconds before.
   static const int16_t SWITCH_OFF_W = 500;
+  static const uint32_t SWITCH_AFTER_MS = 1000;
+  static const uint32_t SWITCH_BEFORE_MS = 3000;
   /// A switch-off is seen for a couple of seconds; it doubles the rise delay once.
   static const uint32_t BACK_OFF_EVERY_MS = 5000;
   /// The rise delay halves after this long without a load switching off.
@@ -170,9 +173,11 @@ class Controller {
   void read_telemetry_(ModbusRtu *inverter);
   /// How much the PV port rose since the meter took its reading.
   float pv_rise_() const;
-  void note_export_() {
-    if (this->command_ > 0)
-      this->exported_at_ = millis();
+  /// Export while discharging, at a meter reading with the pushes' share taken out.
+  void note_export_(float reading);
+  /// The battery as the model has it when the meter took the reading being acted on.
+  float battery_at_reading_() const {
+    return this->modelled_[(this->modelled_head_ + MAX_DELAY_TICKS - this->delay_ticks_) % MAX_DELAY_TICKS];
   }
   /// A load the battery was covering switched off: doubles the rise delay.
   void back_off_();
