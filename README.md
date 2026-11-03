@@ -395,7 +395,8 @@ the ESP32 last commanded. So between control ticks the ESP32 checks its setpoint
 100 ms and puts it back when a push has overwritten it, then ignores the meter for a
 moment: the blip that follows is the push, not the house. Export larger than the push could
 have caused, judged by how far the battery actually followed it, is still corrected at
-once. In Zero export the component
+once; so is any export in the few seconds after a load switches off, while the pushes still
+carry the battery's target from before it. In Zero export the component
 also turns the scheduler's custom mode off, so the push carries the battery's own
 zero-import target instead of the resting value, and that is what the battery keeps doing
 if the ESP32 stops. Manual turns it back on.

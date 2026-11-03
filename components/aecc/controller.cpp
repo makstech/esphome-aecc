@@ -41,9 +41,10 @@ float Controller::filter_(float sample) {
     if (now - this->exported_at_ <= SWITCH_BEFORE_MS)
       this->back_off_();
   }
-  if (this->rise_backoff_ms_ > this->rise_ms_ && now - this->switched_off_at_ >= SWITCHING_QUIET_MS) {
+  if (this->rise_backoff_ms_ > this->rise_ms_ && now - this->switched_off_at_ >= SWITCHING_QUIET_MS &&
+      now - this->halved_at_ >= SWITCHING_QUIET_MS) {
     this->rise_backoff_ms_ /= 2;
-    this->switched_off_at_ = now;
+    this->halved_at_ = now;
     ESP_LOGD(TAG, "no load switching off: rise delay %u ms", (unsigned) this->effective_rise_delay());
   }
 
@@ -161,12 +162,17 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
   if (fresh && this->masked_()) {
     // Hold the command, since the reading may be the push's blip; but pushes come in bursts,
     // and export beyond what they could add would otherwise go uncorrected for seconds.
-    const float floor = (float) (this->grid_target_ - this->push_explains_() - PUSH_EXPORT_MARGIN_W);
+    // Right after a load switches off they carry the energy manager's target from before it,
+    // and keep coming until it catches up, so then they excuse none of it.
+    const int32_t explains =
+        millis() - this->switched_off_at_ <= STALE_PUSHES_MS ? 0 : this->push_explains_();
+    const float floor = (float) (this->grid_target_ - explains - PUSH_EXPORT_MARGIN_W);
     if (this->last_grid_ < floor && this->warm() && !this->frozen_) {
-      this->note_export_(this->last_grid_ + (float) this->push_explains_());
-      this->command_ = this->law_ == ControlLaw::PREDICTIVE
-                           ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
-                           : this->step_(this->last_grid_, soc, soc_valid);
+      this->note_export_(this->last_grid_ + (float) explains);
+      const int16_t next = this->law_ == ControlLaw::PREDICTIVE
+                               ? this->predict_step_(this->last_grid_ - this->pv_rise_(), soc, soc_valid)
+                               : this->step_(this->last_grid_, soc, soc_valid);
+      this->command_ = std::min(this->command_, next);
     }
   } else if (fresh) {
     this->anchor_if_lost_();
@@ -189,6 +195,10 @@ void Controller::tick(ModbusRtu *inverter, uint16_t soc, bool soc_valid, bool ma
       if (grid > target) {
         const float margin = std::min(target, (float) RISE_MARGIN_W);
         next = std::min(next, std::max(law(target), (int16_t) (this->house_floor_ - margin)));
+      } else {
+        // Export never raises the command: just after a cut the model can still credit the
+        // battery with power it has already shed, and take the export for house draw.
+        next = std::min(next, this->command_);
       }
       this->command_ = next;
     }

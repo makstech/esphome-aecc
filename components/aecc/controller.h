@@ -49,6 +49,9 @@ class Controller {
   static const uint32_t BACK_OFF_EVERY_MS = 5000;
   /// The rise delay halves after this long without a load switching off.
   static const uint32_t SWITCHING_QUIET_MS = 300000;
+  /// How long after a load switches off the datalogger's pushes still carry the energy
+  /// manager's target from before it.
+  static const uint32_t STALE_PUSHES_MS = 3000;
   /// One sample is its own median. Commanding on it means a single glitched
   /// reading at boot can ask for the full discharge cap.
   static const size_t WARMUP_SAMPLES = 3;
@@ -217,6 +220,7 @@ class Controller {
   uint32_t rise_backoff_ms_{0};
   uint32_t backed_off_at_{0};
   uint32_t switched_off_at_{0};
+  uint32_t halved_at_{0};
   uint32_t exported_at_{0};
   /// The lowest the house alone drew throughout the rise delay.
   float house_floor_{0};
